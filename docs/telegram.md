@@ -1,19 +1,22 @@
 # Telegram setup (ZeroClaw)
 
-Telegram is the only messaging channel in this lean stack. ZeroClaw **long-polls** the Bot API — no inbound ports, no QR codes, no SMS.
+Telegram is the **default** messaging channel in this lean stack. ZeroClaw
+**long-polls** the Bot API — no inbound ports, no QR codes, no SMS.
+
+WhatsApp (friend / group) is optional: [docs/whatsapp.md](whatsapp.md).
 
 Full upstream notes: [ZeroClaw network deployment](https://github.com/zeroclaw-labs/zeroclaw/blob/master/docs/ops/network-deployment.md).
 
 ---
 
-## Why Telegram (not WhatsApp)
+## Why Telegram first (WhatsApp optional)
 
 | | Telegram bot | WhatsApp Web |
 |---|---|---|
-| Setup | BotFather token + allowlist | QR linked device |
-| Inbound port | None (polls) | Session / optional webhook |
-| Identity | Separate bot account | Your number or second SIM |
-| Footprint | Token in `.env` | Session files under `data/` |
+| Setup | BotFather token + peer allowlist | QR linked device |
+| Inbound port | None (polls) | None (WebSocket); Cloud API needs webhook |
+| Identity | Separate bot account | Linked phone number |
+| Footprint | Token in `.env` | Session DB under `config/` / `data/` |
 
 ---
 
@@ -43,11 +46,15 @@ TELEGRAM_ALLOWED_USERS=123456789
 
 Multiple users: comma-separated IDs — `111,222,333`.
 
+`make sync-config` writes those IDs into ZeroClaw schema v3
+`[peer_groups.telegram_default].external_peers` (with `agents = ["main"]`).
+
 Then:
 
 ```bash
 make sync-config
 make up
+# or remote: make remote-deploy
 make logs
 ```
 
@@ -55,20 +62,15 @@ make logs
 
 Send a message in Telegram. Only IDs in `TELEGRAM_ALLOWED_USERS` are answered.
 
----
-
-## Pairing note
-
-Upstream ZeroClaw may require channel pairing on some builds (`zeroclaw onboard channels` / `zeroclaw channel bind-telegram`). If the bot ignores you after a healthy start:
+If the bot still asks for operator approval after a fresh deploy:
 
 ```bash
-# Debug shell (debian image has a shell; :latest is distroless)
-make shell
-# or:
-docker compose exec zeroclaw zeroclaw status
+make remote-bind
+# or: make remote-bind TG_USER=123456789
 ```
 
-Check logs with `make logs` for pairing / allowlist errors.
+That runs `zeroclaw channel bind-telegram` and should also ensure the peer group
+lists agent `main`. Then message again.
 
 ---
 

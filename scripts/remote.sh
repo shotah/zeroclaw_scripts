@@ -21,7 +21,9 @@ DEPLOY_PATH="${DEPLOY_PATH:-/opt/zeroclaw}"
 DEPLOY_SSH_PORT="${DEPLOY_SSH_PORT:-22}"
 
 SSH_OPTS=(-p "$DEPLOY_SSH_PORT" -o StrictHostKeyChecking=accept-new)
-[[ -n "${DEPLOY_SSH_KEY:-}" ]] && SSH_OPTS+=(-i "$DEPLOY_SSH_KEY")
+# scp: -P is port; -p is preserve (do not reuse SSH_OPTS for scp)
+SCP_OPTS=(-P "$DEPLOY_SSH_PORT" -o StrictHostKeyChecking=accept-new)
+[[ -n "${DEPLOY_SSH_KEY:-}" ]] && SSH_OPTS+=(-i "$DEPLOY_SSH_KEY") && SCP_OPTS+=(-i "$DEPLOY_SSH_KEY")
 TARGET="${DEPLOY_USER}@${DEPLOY_HOST}"
 
 remote() {
@@ -38,25 +40,48 @@ case "$ACTION" in
     ;;
   sync)
     command -v node >/dev/null && node scripts/sync-config.js || true
-    remote "mkdir -p '$DEPLOY_PATH/data/.zeroclaw' '$DEPLOY_PATH/data/data' '$DEPLOY_PATH/config' '$DEPLOY_PATH/scripts' '$DEPLOY_PATH/docs'"
+    remote "mkdir -p '$DEPLOY_PATH/data/data' '$DEPLOY_PATH/config' '$DEPLOY_PATH/scripts' '$DEPLOY_PATH/docs' '$DEPLOY_PATH/secrets/google'"
     for f in docker-compose.yml Makefile .env .env.example Dockerfile \
-             config/config.toml.example scripts/sync-config.js docs/telegram.md README.md; do
+             config/config.toml.example config/config.toml scripts/sync-config.js \
+             docs/telegram.md docs/whatsapp.md docs/google-workspace.md docs/deploy.md README.md \
+             secrets/google/.gitkeep; do
       [[ -f "$f" ]] || continue
       echo "scp $f"
-      scp "${SSH_OPTS[@]}" "$f" "$TARGET:$DEPLOY_PATH/$f"
+      scp "${SCP_OPTS[@]}" "$f" "$TARGET:$DEPLOY_PATH/$f"
     done
-    if [[ -f data/.zeroclaw/config.toml ]]; then
-      scp "${SSH_OPTS[@]}" data/.zeroclaw/config.toml "$TARGET:$DEPLOY_PATH/data/.zeroclaw/config.toml"
+    if [[ -f secrets/google/credentials.json ]]; then
+      echo "scp secrets/google/credentials.json"
+      scp "${SCP_OPTS[@]}" secrets/google/credentials.json "$TARGET:$DEPLOY_PATH/secrets/google/credentials.json"
+    else
+      echo "No secrets/google/credentials.json yet (see docs/google-workspace.md)"
     fi
+    if [[ -f secrets/google/client_secret.json ]]; then
+      echo "scp secrets/google/client_secret.json"
+      scp "${SCP_OPTS[@]}" secrets/google/client_secret.json "$TARGET:$DEPLOY_PATH/secrets/google/client_secret.json"
+    fi
+    # Drop stale gws token cache so new refresh-token scopes take effect
+    remote "rm -f '$DEPLOY_PATH/secrets/google/token_cache.json'; rm -rf '$DEPLOY_PATH/secrets/google/cache'"
     echo "Synced to $TARGET:$DEPLOY_PATH"
     ;;
-  up) remote "cd '$DEPLOY_PATH' && docker compose pull && docker compose up -d" ;;
+  up) remote "cd '$DEPLOY_PATH' && docker compose build --pull && docker compose up -d" ;;
   down) remote "cd '$DEPLOY_PATH' && docker compose down" ;;
   restart) remote "cd '$DEPLOY_PATH' && docker compose restart" ;;
   logs) ssh "${SSH_OPTS[@]}" -t "$TARGET" "cd '$DEPLOY_PATH' && docker compose logs -f --tail=100" ;;
   ps) remote "cd '$DEPLOY_PATH' && docker compose ps" ;;
   status) remote "cd '$DEPLOY_PATH' && docker compose exec -T zeroclaw zeroclaw status --format=exit-code && echo OK" ;;
-  pull) remote "cd '$DEPLOY_PATH' && docker compose pull" ;;
+  pull) remote "cd '$DEPLOY_PATH' && docker compose build --pull" ;;
+  bind)
+    UID_ARG="${1:-}"
+    if [[ -z "$UID_ARG" && -n "${TELEGRAM_ALLOWED_USERS:-}" ]]; then
+      UID_ARG="${TELEGRAM_ALLOWED_USERS%%,*}"
+      UID_ARG="$(echo "$UID_ARG" | tr -d '[:space:]')"
+    fi
+    [[ -n "$UID_ARG" ]] || { echo "Usage: $0 bind <telegram_user_id>"; exit 1; }
+    echo "Binding Telegram user $UID_ARG on server..."
+    # Schema v3: bind fills external_peers; agents must include the agent alias.
+    remote "cd '$DEPLOY_PATH' && docker compose exec -T zeroclaw zeroclaw channel bind-telegram $UID_ARG && docker compose exec -T zeroclaw zeroclaw config set peer_groups.telegram_default.agents '[\"main\"]' && docker compose restart zeroclaw"
+    echo "Bound. Send your Telegram message again."
+    ;;
   ssh)
     if [[ $# -gt 0 ]]; then
       ssh "${SSH_OPTS[@]}" -t "$TARGET" "cd '$DEPLOY_PATH' && $*"

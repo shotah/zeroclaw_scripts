@@ -1,16 +1,18 @@
-# Minimal ZeroClaw config — Gemini + Telegram.
+# Minimal ZeroClaw config — Gemini + Telegram (schema v3).
 # Secrets are injected at runtime via .env / compose schema-mirror env vars.
-# Synced into data/.zeroclaw/config.toml by: make sync-config
+# Synced into config/config.toml by: make sync-config
 #
-# Schema: https://github.com/zeroclaw-labs/zeroclaw (providers.models.<family>.<alias>)
+# Schema v3: inbound Telegram auth is peer_groups.*.external_peers
+# (channel-level allowed_users was removed).
+
+schema_version = 3
 
 [providers.models.gemini.default]
-model = "gemini-2.5-flash"
+model = "gemini-3.5-flash"
 # api_key filled from GEMINI_API_KEY via ZEROCLAW_providers__models__gemini__default__api_key
 
 [agents.main]
 enabled = true
-default = true
 model_provider = "gemini.default"
 risk_profile = "default"
 channels = ["telegram.default"]
@@ -18,7 +20,29 @@ channels = ["telegram.default"]
 [channels.telegram.default]
 enabled = true
 # bot_token filled from TELEGRAM_BOT_TOKEN via env override
-allowed_users = []
+
+# Who may talk to the agent on telegram.default (from TELEGRAM_ALLOWED_USERS)
+[peer_groups.telegram_default]
+channel = "telegram.default"
+agents = ["main"]
+external_peers = []
+
+# Full Google Workspace via gws (docs/google-workspace.md).
+# Empty allowed_operations = all methods for the listed services.
+[google_workspace]
+enabled = true
+credentials_path = "/zeroclaw-data/.config/gws/credentials.json"
+allowed_services = [
+  "gmail",
+  "calendar",
+  "docs",
+  "drive",
+  "sheets",
+  "tasks",
+  "people",
+]
+timeout_secs = 90
+audit_log = true
 
 [gateway]
 host = "127.0.0.1"
@@ -39,4 +63,5 @@ auto_approve = [
   "calculator",
   "glob_search",
   "content_search",
+  "google_workspace",
 ]

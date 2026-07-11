@@ -5,7 +5,16 @@
 *.pem
 *.key
 
-# Persistent runtime data (ZeroClaw mounts ./data → /zeroclaw-data)
+# Google OAuth / gws credentials (never commit)
+secrets/google/*
+!secrets/google/.gitkeep
+!secrets/google/.gitignore
+
+# Generated config + ZeroClaw pairing/agent state (synced / runtime)
+config/*
+!config/config.toml.example
+
+# Workspace / memory volume
 data/
 !data/.gitkeep
 

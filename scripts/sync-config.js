@@ -2,8 +2,8 @@
 'use strict';
 
 /**
- * Sync .env → data/.zeroclaw/config.toml from config/config.toml.example.
- * Host-side only (no Node in the container). Requires Node on the host for sync.
+ * Sync .env → config/config.toml (deployable; owned by you).
+ * Schema v3: TELEGRAM_ALLOWED_USERS → peer_groups.telegram_default.external_peers
  */
 
 const fs = require('fs');
@@ -12,7 +12,7 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const envPath = path.join(root, '.env');
 const examplePath = path.join(root, 'config', 'config.toml.example');
-const outDir = path.join(root, 'data', '.zeroclaw');
+const outDir = path.join(root, 'config');
 const outPath = path.join(outDir, 'config.toml');
 
 function loadDotEnv(file) {
@@ -59,21 +59,19 @@ function main() {
         ? fileEnv[k]
         : fallback;
 
-  const model = get('GEMINI_MODEL', 'gemini-2.5-flash');
-  const allowed = tomlStringArray(get('TELEGRAM_ALLOWED_USERS', ''));
+  const model = get('GEMINI_MODEL', 'gemini-3.5-flash');
+  const peers = tomlStringArray(get('TELEGRAM_ALLOWED_USERS', ''));
 
   let toml = fs.readFileSync(examplePath, 'utf8');
 
-  // Replace model line under gemini.default
   toml = toml.replace(
     /(\[providers\.models\.gemini\.default\][\s\S]*?model\s*=\s*")[^"]*(")/,
     `$1${model}$2`
   );
 
-  // Replace allowed_users array under telegram.default
   toml = toml.replace(
-    /(\[channels\.telegram\.default\][\s\S]*?allowed_users\s*=\s*)\[[^\]]*\]/,
-    `$1${allowed}`
+    /(\[peer_groups\.telegram_default\][\s\S]*?external_peers\s*=\s*)\[[^\]]*\]/,
+    `$1${peers}`
   );
 
   fs.mkdirSync(outDir, { recursive: true });
@@ -82,7 +80,7 @@ function main() {
 
   console.log(`Wrote ${outPath}`);
   console.log(`  providers.models.gemini.default.model = ${model}`);
-  console.log(`  channels.telegram.default.allowed_users = ${allowed}`);
+  console.log(`  peer_groups.telegram_default.external_peers = ${peers}`);
   console.log('  api_key / bot_token come from compose env overrides (.env)');
 }
 

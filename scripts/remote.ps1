@@ -3,7 +3,7 @@
 
 param(
   [Parameter(Position = 0, Mandatory = $true)]
-  [ValidateSet('check', 'sync', 'up', 'down', 'restart', 'logs', 'ps', 'status', 'pull', 'ssh')]
+  [ValidateSet('check', 'sync', 'up', 'down', 'restart', 'logs', 'ps', 'status', 'pull', 'ssh', 'bind')]
   [string]$Action,
 
   [Parameter(ValueFromRemainingArguments = $true)]
@@ -33,41 +33,82 @@ function Read-DotEnv {
   return $map
 }
 
-function Require-Cmd([string]$Name) {
-  if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
-    throw "Missing '$Name'. Install OpenSSH Client (Windows Settings → Optional features) or use WSL/Ubuntu."
+function Resolve-OpenSsh {
+  param([Parameter(Mandatory = $true)][ValidateSet('ssh', 'scp')][string]$Name)
+
+  $file = "$Name.exe"
+  $candidates = @(
+    # 32-bit make/powershell: Sysnative maps to real 64-bit System32
+    (Join-Path $env:SystemRoot "Sysnative\OpenSSH\$file"),
+    (Join-Path $env:SystemRoot "System32\OpenSSH\$file")
+  )
+
+  # where.exe (more reliable than Get-Command under make / -NoProfile)
+  try {
+    $whereHits = & where.exe $file 2>$null
+    if ($whereHits) {
+      foreach ($hit in @($whereHits)) {
+        if ($hit -and (Test-Path -LiteralPath $hit)) { $candidates += $hit }
+      }
+    }
+  } catch {}
+
+  $gitSsh = Join-Path ${env:ProgramFiles} "Git\usr\bin\$file"
+  if (Test-Path -LiteralPath $gitSsh) { $candidates += $gitSsh }
+
+  $cmd = Get-Command $file -ErrorAction SilentlyContinue
+  if ($cmd -and $cmd.Source) { $candidates += $cmd.Source }
+  $cmd2 = Get-Command $Name -ErrorAction SilentlyContinue
+  if ($cmd2 -and $cmd2.Source) { $candidates += $cmd2.Source }
+
+  foreach ($c in $candidates) {
+    if ($c -and (Test-Path -LiteralPath $c)) {
+      return (Resolve-Path -LiteralPath $c).Path
+    }
   }
+
+  throw @"
+Missing $file.
+
+Your interactive shell can often see ssh while make cannot (32-bit PATH / System32 redirection).
+Install OpenSSH Client, or set a full path. Expected location:
+  $env:SystemRoot\System32\OpenSSH\$file
+"@
 }
+
+$SshExe = Resolve-OpenSsh ssh
+$ScpExe = Resolve-OpenSsh scp
+Write-Host "Using SSH: $SshExe"
 
 $envMap = Read-DotEnv (Join-Path $Root '.env')
 $hostName = $envMap['DEPLOY_HOST']
 $user = if ($envMap['DEPLOY_USER']) { $envMap['DEPLOY_USER'] } else { 'ubuntu' }
-$path = if ($envMap['DEPLOY_PATH']) { $envMap['DEPLOY_PATH'] } else { '/opt/zeroclaw' }
-$port = if ($envMap['DEPLOY_SSH_PORT']) { $envMap['DEPLOY_SSH_PORT'] } else { '22' }
+$deployPath = if ($envMap['DEPLOY_PATH']) { $envMap['DEPLOY_PATH'] } else { '/opt/zeroclaw' }
+$sshPort = if ($envMap['DEPLOY_SSH_PORT']) { $envMap['DEPLOY_SSH_PORT'] } else { '22' }
 $key = $envMap['DEPLOY_SSH_KEY']
 
 if (-not $hostName) {
   throw "Set DEPLOY_HOST in .env (e.g. DEPLOY_HOST=myserver.example.com)"
 }
 
-Require-Cmd ssh
-Require-Cmd scp
-
-$sshArgs = @('-p', $port, '-o', 'StrictHostKeyChecking=accept-new')
+$sshArgs = @('-p', $sshPort, '-o', 'StrictHostKeyChecking=accept-new')
+# scp uses -P for port; -p means "preserve times" and breaks with "stat local 22"
+$scpArgs = @('-P', $sshPort, '-o', 'StrictHostKeyChecking=accept-new')
 if ($key) {
-  if (-not (Test-Path $key)) { throw "DEPLOY_SSH_KEY not found: $key" }
+  if (-not (Test-Path -LiteralPath $key)) { throw "DEPLOY_SSH_KEY not found: $key" }
   $sshArgs += @('-i', $key)
+  $scpArgs += @('-i', $key)
 }
 $target = "${user}@${hostName}"
 
 function Invoke-Remote([string]$RemoteCmd) {
-  & ssh @sshArgs $target $RemoteCmd
+  & $SshExe @sshArgs $target $RemoteCmd
   if ($LASTEXITCODE -ne 0) { throw "Remote command failed ($LASTEXITCODE): $RemoteCmd" }
 }
 
 switch ($Action) {
   'check' {
-    Write-Host "Checking SSH: $target:$port → $path"
+    Write-Host "Checking SSH: ${target}:${sshPort} -> ${deployPath}"
     Invoke-Remote "echo ok && uname -a && docker --version && docker compose version"
     Write-Host "Remote OK"
   }
@@ -77,8 +118,8 @@ switch ($Action) {
       node (Join-Path $Root 'scripts/sync-config.js')
     }
 
-    Write-Host "Ensuring remote dir $path"
-    Invoke-Remote "mkdir -p '$path/data/.zeroclaw' '$path/data/data' '$path/config' '$path/scripts' '$path/docs'"
+    Write-Host "Ensuring remote dir ${deployPath}"
+    Invoke-Remote "mkdir -p '${deployPath}/data/data' '${deployPath}/config' '${deployPath}/scripts' '${deployPath}/docs' '${deployPath}/secrets/google'"
 
     $files = @(
       'docker-compose.yml',
@@ -87,9 +128,14 @@ switch ($Action) {
       '.env.example',
       'Dockerfile',
       'config/config.toml.example',
+      'config/config.toml',
       'scripts/sync-config.js',
       'docs/telegram.md',
-      'README.md'
+      'docs/whatsapp.md',
+      'docs/google-workspace.md',
+      'docs/deploy.md',
+      'README.md',
+      'secrets/google/.gitkeep'
     )
     foreach ($f in $files) {
       $local = Join-Path $Root $f
@@ -97,48 +143,75 @@ switch ($Action) {
         Write-Host "Skip missing $f"
         continue
       }
-      $remote = "$target`:$path/$f"
+      $remote = "${target}:${deployPath}/$f"
       Write-Host "scp $f"
-      & scp @sshArgs $local $remote
+      & $ScpExe @scpArgs $local $remote
       if ($LASTEXITCODE -ne 0) { throw "scp failed: $f" }
     }
 
-    $cfg = Join-Path $Root 'data/.zeroclaw/config.toml'
-    if (Test-Path $cfg) {
-      Write-Host "scp data/.zeroclaw/config.toml"
-      & scp @sshArgs $cfg "$target`:$path/data/.zeroclaw/config.toml"
-      if ($LASTEXITCODE -ne 0) { throw "scp failed: config.toml" }
+    $creds = Join-Path $Root 'secrets/google/credentials.json'
+    if (Test-Path -LiteralPath $creds) {
+      Write-Host "scp secrets/google/credentials.json"
+      & $ScpExe @scpArgs $creds "${target}:${deployPath}/secrets/google/credentials.json"
+      if ($LASTEXITCODE -ne 0) { throw "scp failed: secrets/google/credentials.json" }
+    } else {
+      Write-Host "No secrets/google/credentials.json yet (see docs/google-workspace.md)"
     }
 
-    Write-Host "Synced to $target:$path"
+    $clientSecret = Join-Path $Root 'secrets/google/client_secret.json'
+    if (Test-Path -LiteralPath $clientSecret) {
+      Write-Host "scp secrets/google/client_secret.json"
+      & $ScpExe @scpArgs $clientSecret "${target}:${deployPath}/secrets/google/client_secret.json"
+      if ($LASTEXITCODE -ne 0) { throw "scp failed: secrets/google/client_secret.json" }
+    }
+
+    # Drop stale gws token cache so a new refresh token's scopes take effect
+    Invoke-Remote "rm -f '${deployPath}/secrets/google/token_cache.json'; rm -rf '${deployPath}/secrets/google/cache'"
+
+    Write-Host "Synced to ${target}:${deployPath}"
   }
   'up' {
-    Invoke-Remote "cd '$path' && docker compose pull && docker compose up -d"
+    Invoke-Remote "cd '${deployPath}' && docker compose build --pull && docker compose up -d"
   }
   'down' {
-    Invoke-Remote "cd '$path' && docker compose down"
+    Invoke-Remote "cd '${deployPath}' && docker compose down"
   }
   'restart' {
-    Invoke-Remote "cd '$path' && docker compose restart"
+    Invoke-Remote "cd '${deployPath}' && docker compose restart"
   }
   'logs' {
-    & ssh @sshArgs -t $target "cd '$path' && docker compose logs -f --tail=100"
+    & $SshExe @sshArgs -t $target "cd '${deployPath}' && docker compose logs -f --tail=100"
   }
   'ps' {
-    Invoke-Remote "cd '$path' && docker compose ps"
+    Invoke-Remote "cd '${deployPath}' && docker compose ps"
   }
   'status' {
-    Invoke-Remote "cd '$path' && docker compose exec -T zeroclaw zeroclaw status --format=exit-code && echo OK"
+    Invoke-Remote "cd '${deployPath}' && docker compose exec -T zeroclaw zeroclaw status --format=exit-code && echo OK"
   }
   'pull' {
-    Invoke-Remote "cd '$path' && docker compose pull"
+    Invoke-Remote "cd '${deployPath}' && docker compose pull --ignore-buildable 2>/dev/null; docker compose build --pull"
+  }
+  'bind' {
+    $uid = $null
+    if ($Rest -and $Rest.Count -gt 0) {
+      $uid = $Rest[0]
+    } elseif ($envMap['TELEGRAM_ALLOWED_USERS']) {
+      $uid = ($envMap['TELEGRAM_ALLOWED_USERS'] -split ',')[0].Trim()
+    }
+    if (-not $uid) {
+      throw "Pass a Telegram user id: make remote-bind TG_USER=123456789 (or set TELEGRAM_ALLOWED_USERS)"
+    }
+    Write-Host "Binding Telegram user $uid on server..."
+    # Schema v3: bind fills external_peers; agents must include the agent alias.
+    Invoke-Remote "cd '${deployPath}' && docker compose exec -T zeroclaw zeroclaw channel bind-telegram $uid && docker compose exec -T zeroclaw zeroclaw config set peer_groups.telegram_default.agents '[`"main`"]' && docker compose restart zeroclaw"
+    Write-Host "Bound. Send your Telegram message again."
   }
   'ssh' {
     if ($Rest -and $Rest.Count -gt 0) {
       $cmd = ($Rest -join ' ')
-      & ssh @sshArgs -t $target "cd '$path' && $cmd"
+      & $SshExe @sshArgs -t $target "cd '${deployPath}' && $cmd"
     } else {
-      & ssh @sshArgs -t $target "cd '$path' && exec `$SHELL -l"
+      & $SshExe @sshArgs -t $target "cd '${deployPath}' && exec `$SHELL -l"
     }
   }
 }

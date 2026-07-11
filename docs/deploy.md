@@ -21,9 +21,13 @@ On the Ubuntu host (once):
 sudo apt update
 sudo apt install -y docker.io docker-compose-v2
 sudo usermod -aG docker "$USER"   # then log out/in
-sudo mkdir -p /opt/zeroclaw
-sudo chown "$USER:$USER" /opt/zeroclaw
+
+# Project dir — match DEPLOY_PATH in .env (examples: /zeroclaw or /opt/zeroclaw)
+sudo mkdir -p /zeroclaw
+sudo chown "$USER:$USER" /zeroclaw
 ```
+
+Set `ZEROCLAW_UID` / `ZEROCLAW_GID` in `.env` to your server user (`id -u` / `id -g`, usually `1000`). The container runs as that user so pairing and `data/` writes work without `chown 65534`.
 
 Ensure outbound HTTPS works (Telegram + Gemini). **No inbound ports** required for Telegram polling.
 
@@ -31,7 +35,7 @@ Ensure outbound HTTPS works (Telegram + Gemini). **No inbound ports** required f
 
 ## Workstation prerequisites (Windows)
 
-1. **OpenSSH Client** — Settings → Apps → Optional features → OpenSSH Client  
+1. **OpenSSH Client** — Settings → Apps → Optional features → OpenSSH Client
    Or: `Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0`
 2. SSH key access to the server (`ssh ubuntu@your-host` works without a password prompt, or with your key).
 3. This repo + `make` (Git Bash / chocolatey `make` / etc.).
@@ -46,8 +50,8 @@ You do **not** need Docker Desktop on Windows if you only use `make remote-*`.
 # … Gemini + Telegram secrets …
 
 DEPLOY_HOST=myserver.example.com
-DEPLOY_USER=ubuntu
-DEPLOY_PATH=/opt/zeroclaw
+DEPLOY_USER=user
+DEPLOY_PATH=/zeroclaw
 DEPLOY_SSH_PORT=22
 DEPLOY_SSH_KEY=C:/Users/you/.ssh/id_ed25519
 ```
@@ -69,13 +73,13 @@ Or step by step:
 
 | Command | What it does |
 |---|---|
-| `make remote-sync` | scp compose, Makefile, `.env`, config, scripts |
-| `make remote-up` | `docker compose pull && up -d` on server |
+| `make remote-sync` | scp compose, Makefile, `.env`, config, secrets, scripts |
+| `make remote-up` | `docker compose build --pull && up -d` on server |
 | `make remote-down` | stop stack on server |
 | `make remote-restart` | restart |
 | `make remote-ps` | compose ps |
 | `make remote-status` | `zeroclaw status` |
-| `make remote-pull` | pull image only |
+| `make remote-pull` | rebuild thin image (pulls upstream base) |
 | `make remote-ssh` | interactive shell in `DEPLOY_PATH` |
 
 ---

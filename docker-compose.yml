@@ -1,29 +1,43 @@
 # Lean ZeroClaw stack — Gemini + Telegram, no host ports (Telegram polls).
-# Docs: https://github.com/zeroclaw-labs/zeroclaw/blob/master/docs/book/src/setup/container.md
+# Image: distroless upstream + gws binary only (see Dockerfile).
+# Docs: docs/telegram.md, docs/google-workspace.md
 
 services:
   zeroclaw:
-    image: ${ZEROCLAW_IMAGE:-ghcr.io/zeroclaw-labs/zeroclaw:latest}
+    build:
+      context: .
+      args:
+        ZEROCLAW_BASE: ${ZEROCLAW_BASE:-ghcr.io/zeroclaw-labs/zeroclaw:latest}
+        GWS_VERSION: ${GWS_VERSION:-v0.22.5}
+    image: ${ZEROCLAW_IMAGE:-zeroclaw-gws:local}
     container_name: zeroclaw
     restart: unless-stopped
+    # Match the deploy user on the server (id -u / id -g). Avoids UID 65534 data fights.
+    user: "${ZEROCLAW_UID:-1000}:${ZEROCLAW_GID:-1000}"
     env_file:
       - path: .env
         required: false
     environment:
       HOME: /zeroclaw-data
       ZEROCLAW_DATA_DIR: /zeroclaw-data/data
-      # Schema-mirror overrides (secrets stay in .env, not baked into image)
       ZEROCLAW_providers__models__gemini__default__api_key: ${GEMINI_API_KEY:-}
-      ZEROCLAW_providers__models__gemini__default__model: ${GEMINI_MODEL:-gemini-2.5-flash}
+      ZEROCLAW_providers__models__gemini__default__model: ${GEMINI_MODEL:-gemini-3.5-flash}
       ZEROCLAW_channels__telegram__default__bot_token: ${TELEGRAM_BOT_TOKEN:-}
       ZEROCLAW_channels__telegram__default__enabled: "true"
-      # Gateway stays internal — do not publish ports for Telegram-only
       ZEROCLAW_gateway__host: "127.0.0.1"
       ZEROCLAW_gateway__port: "42617"
       ZEROCLAW_gateway__allow_public_bind: "false"
+      # gws in Docker: file keyring + exported OAuth creds (see docs/google-workspace.md)
+      GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND: file
+      GOOGLE_WORKSPACE_CLI_CONFIG_DIR: /zeroclaw-data/.config/gws
+      GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE: /zeroclaw-data/.config/gws/credentials.json
     volumes:
-      - ./data:/zeroclaw-data
-    # No ports: — Telegram long-polls outbound; no inbound webhook needed.
+      # Full .zeroclaw dir (config.toml + pairing/agent state) — owned by deploy user
+      - ./config:/zeroclaw-data/.zeroclaw
+      # Workspace / memory
+      - ./data:/zeroclaw-data/data
+      # Google OAuth export (gitignored). Create via docs/google-workspace.md
+      - ./secrets/google:/zeroclaw-data/.config/gws
     mem_limit: 512m
     cpus: 2.0
     mem_reservation: 32m
