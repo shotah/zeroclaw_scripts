@@ -1,505 +1,115 @@
-# docker_open_claw
+# docker_open_claw → ZeroClaw (lean)
 
-A Dockerized [OpenClaw](https://github.com/openclaw/openclaw) personal assistant powered by **Google Gemini**, reachable over **WhatsApp** (linked device in the app — no SMS required). Message it to manage Google Workspace (Gmail, Calendar, Docs), research flights, and run general tasks through natural-language chat.
+A minimal Docker wrapper around **[ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw)** — a single Rust binary agent runtime. This repo wires **Gemini + Telegram** only: no WhatsApp, no Node gateway, no published dashboard port.
 
-> **Status:** Runnable Docker wrapper around upstream OpenClaw. The Makefile orchestrates first-run setup; OpenClaw itself owns config, skills, and OAuth. See [How setup works](#how-setup-works) and [TODO.md](TODO.md) for remaining gaps.
-
----
-
-## What it does
-
-| Capability | Example message |
-|---|---|
-| **Schedule meetings** | "Schedule lunch with Alex next Tuesday at noon and send him a calendar invite." |
-| **Email & invites** | "Email the team about Friday's standup and CC Sarah." |
-| **Calendar lookup** | "What's on my calendar tomorrow morning?" |
-| **Flight research** | "Find the cheapest nonstop SFO → JFK flights next weekend." |
-| **General research** | "Summarize the latest news on quantum computing." |
-| **Docs & Drive** | "Find the Q4 budget doc in Drive and summarize the key numbers." |
-
-The assistant runs 24/7 inside a container. You talk to it through a messaging channel; it reasons with Gemini and calls Google APIs (and other tools) on your behalf.
+Upstream: [zeroclaw-labs/zeroclaw](https://github.com/zeroclaw-labs/zeroclaw) · [zeroclawlabs.ai](https://www.zeroclawlabs.ai/)
 
 ---
 
-## Architecture overview
+## Why ZeroClaw here
 
-```mermaid
-flowchart TB
-    subgraph User["Your phone"]
-        WA[WhatsApp]
-    end
+| | OpenClaw (old) | ZeroClaw (now) |
+|---|---|---|
+| Runtime | Node + plugins | Rust `zeroclaw daemon` |
+| Idle RAM | Heavy | Official compose: ~32M reserve / **512M cap** |
+| Chat | WhatsApp Web (QR) | **Telegram bot** (polls out) |
+| Host ports | Gateway UI | **None** (Telegram needs egress only) |
+| Config | JSON + clawhub | One `config.toml` + `.env` |
 
-    subgraph Docker["docker_open_claw container"]
-        GW[OpenClaw Gateway<br/>:18789]
-        AG[Agent runtime]
-        SK[Skills layer]
-        WS[(Persistent workspace<br/>config · tokens · sessions)]
-    end
-
-    subgraph External["External services"]
-        GEM[Google Gemini API]
-        GWS[Google Workspace<br/>Gmail · Calendar · Docs · Drive]
-        FLT[Flight APIs<br/>Google Flights / Aviation]
-        WEB[Web search & browser]
-    end
-
-    WA <-->|"messages in / replies out"| GW
-    GW --> AG
-    AG --> SK
-    AG <-->|"LLM inference"| GEM
-    SK --> GWS
-    SK --> FLT
-    SK --> WEB
-    GW --- WS
-    AG --- WS
-```
-
-### Component roles
-
-| Component | Role |
-|---|---|
-| **OpenClaw Gateway** | Receives inbound WhatsApp messages, routes them to the agent, and sends replies back. |
-| **Agent (Gemini)** | Interprets intent, plans multi-step actions, and selects the right skills. |
-| **Skills** | Concrete integrations — Gmail send, Calendar create, flight search, web browse, etc. |
-| **Persistent workspace** | Stores `openclaw.json`, OAuth tokens, WhatsApp session, and conversation history across restarts. |
-
----
-
-## Communication flows
-
-### Inbound message → action → reply
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as You (WhatsApp)
-    participant GW as OpenClaw Gateway
-    participant AG as Gemini Agent
-    participant SK as Skills
-    participant API as Google / Flight APIs
-
-    User->>GW: "Schedule dentist Friday 2pm"
-    GW->>AG: Deliver message (per-sender session)
-    AG->>AG: Parse intent & plan steps
-    AG->>SK: calendar.create_event(...)
-    SK->>API: Google Calendar API
-    API-->>SK: Event created + invite sent
-    SK-->>AG: Tool result
-    AG->>GW: "Done — dentist added Fri 2pm. Invite sent."
-    GW->>User: Reply via WhatsApp
-```
-
-### Multi-step workflow (email + calendar)
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as You
-    participant AG as Gemini Agent
-    participant Cal as Calendar skill
-    participant Mail as Gmail skill
-
-    User->>AG: "Set up a 30-min call with Jordan Thursday 3pm<br/>and email them the invite details"
-
-    AG->>Cal: Check free/busy Thursday 3pm
-    Cal-->>AG: Slot available
-
-    AG->>Cal: Create event + Google Meet link
-    Cal-->>AG: Event ID, Meet URL
-
-    AG->>Mail: Compose & send invite email to Jordan
-    Mail-->>AG: Message sent
-
-    AG->>User: "Call scheduled Thu 3pm. Email sent to Jordan<br/>with Meet link: https://meet.google.com/..."
-```
-
-### Flight research flow
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as You
-    participant AG as Gemini Agent
-    participant SR as Search / Browser skill
-    participant FLT as Flight data source
-
-    User->>AG: "Cheapest SFO to JFK next Fri–Sun, nonstop only"
-
-    AG->>SR: Search flight options
-    SR->>FLT: Query routes & fares
-    FLT-->>SR: Ranked results
-    SR-->>AG: Structured flight list
-
-    AG->>User: Top 3 options with price, airline, times,<br/>and booking links
-```
-
-### Session & security boundary
+Google Calendar / Gmail / flights are **phase 2** (MCP/tools). Chop first, integrate later — see [TODO.md](TODO.md).
 
 ```mermaid
 flowchart LR
-    subgraph Allowed["Allowlisted senders only"]
-        P1["+1 YOUR_PHONE"]
-        P2["+1 PARTNER_PHONE"]
-    end
-
-    subgraph Blocked["Everyone else"]
-        X[Rejected / ignored]
-    end
-
-    IN[Inbound message] --> CHECK{allowFrom<br/>match?}
-    CHECK -->|yes| AGENT[Agent processes]
-    CHECK -->|no| X
-
-    P1 -.-> CHECK
-    P2 -.-> CHECK
+  TG[Telegram] -->|long poll| ZC[zeroclaw daemon]
+  ZC -->|API| GEM[Gemini]
+  ZC --- DATA["./data"]
 ```
-
-Only phone numbers listed in `channels.whatsapp.allowFrom` can command the agent. Easiest setup: link your account and use **Message yourself** — see [docs/whatsapp.md](docs/whatsapp.md).
 
 ---
 
 ## Prerequisites
 
-- **Docker** and **Docker Compose** (Docker Desktop on Windows/macOS, or native Docker on Linux)
-- **Google Gemini API key** — [Google AI Studio](https://aistudio.google.com/apikey)
-- **Google Cloud project** with OAuth credentials for Workspace APIs (Gmail, Calendar, Drive, Docs)
-- **Dedicated bot Gmail** for Google Workspace — **not** your personal account ([why?](docs/google-workspace.md))
-- **WhatsApp** — [docs/whatsapp.md](docs/whatsapp.md). Easiest: link your account + **Message yourself** (no second number). SMS not used.
-- **Optional:** [Flight search](docs/flights.md) via `make flights-setup` (no API key); paid APIs later if needed
-
----
-
-## WhatsApp setup
-
-Full guide: **[docs/whatsapp.md](docs/whatsapp.md)**
-
-**Fastest path (one phone, no SMS):**
-
-1. Set `WHATSAPP_ALLOW_FROM=+1YOURNUMBER` in `.env`
-2. `make whatsapp-login` → scan QR on your phone (**Settings → Linked devices**)
-3. Chat in WhatsApp → **Message yourself**
-
-OpenClaw is a **linked device** on your account — like WhatsApp Web. No second SIM required for trying it out.
-
-**Optional upgrade:** separate bot WhatsApp number (prepaid/eSIM) if you want the assistant on its own identity — see Path B in the guide.
-
-SMS / Twilio is **not implemented**; ignore SMS vars in `.env.example`.
+- Docker + Docker Compose
+- [Gemini API key](https://aistudio.google.com/apikey)
+- Telegram bot token from [@BotFather](https://t.me/BotFather) — [docs/telegram.md](docs/telegram.md)
 
 ---
 
 ## Quick start
 
 ```bash
-git clone https://github.com/YOUR_ORG/docker_open_claw.git
-cd docker_open_claw
+make init
+# Edit .env:
+#   GEMINI_API_KEY=...
+#   TELEGRAM_BOT_TOKEN=...
+#   TELEGRAM_ALLOWED_USERS=123456789   # numeric Telegram user id
 
-make init                     # .env + data/ directories
-# Edit .env — at minimum: GEMINI_API_KEY, WHATSAPP_ALLOW_FROM
-
-make build
-make onboard                  # one-time: writes data/openclaw.json
+make sync-config
 make up
-make logs                     # wait for healthy gateway
-
-make whatsapp-login           # scan QR — then use Message yourself (see docs/whatsapp.md)
-# Control UI: http://127.0.0.1:18789 — paste OPENCLAW_GATEWAY_TOKEN from .env
+make logs
 ```
 
-**Google Workspace** (optional, recommended): [docs/google-workspace.md](docs/google-workspace.md)
+Message your bot on Telegram. That is the whole loop.
 
 ```bash
-make google-credentials SRC=/path/to/client_secret.json
-# Set GOG_ACCOUNT + GOG_KEYRING_PASSWORD in .env, then:
-make restart
-make google-setup             # install gog skill
-make google-auth              # OAuth — sign in as the bot Gmail
-make google-status
+make help          # all targets
+make status        # health inside container
+make down          # stop
 ```
 
-**Flights** (optional, no API key): [docs/flights.md](docs/flights.md)
+### Deploy to an Ubuntu server (from Windows)
+
+You do not need Docker on this PC. Set `DEPLOY_*` in `.env`, then:
 
 ```bash
-make flights-setup            # Google Flights search via flights-search skill
+make remote-check
+make remote-deploy    # scp files + docker compose up on the server
+make remote-logs
 ```
 
-Run `make help` for all commands.
+Full guide: [docs/deploy.md](docs/deploy.md).
 
 ---
 
 ## How setup works
 
-The Makefile does **not** generate a full config from `.env` automatically. It is a thin orchestration layer: copy files on the host, mount volumes into the container, and run OpenClaw / gog CLIs inside Docker. OpenClaw does the real work.
+1. **`make init`** — copies `.env.example`, creates `./data`, installs config template.
+2. **`make sync-config`** — writes `data/.zeroclaw/config.toml` (model + Telegram allowlist from `.env`).
+3. **`make up`** — runs `ghcr.io/zeroclaw-labs/zeroclaw` with `./data` mounted at `/zeroclaw-data`. API key and bot token are passed as schema-mirror env vars (`ZEROCLAW_providers__…`, `ZEROCLAW_channels__…`).
+4. Daemon long-polls Telegram; **no host ports are published**.
 
-```mermaid
-flowchart TB
-    subgraph Host["Your machine (repo)"]
-        ENV[".env"]
-        MK["Makefile"]
-        CRED["data/google/credentials.json"]
-        DATA["data/ → mounted volumes"]
-    end
-
-    subgraph Container["OpenClaw container"]
-        OC["openclaw.json<br/>(written by onboard)"]
-        GW["Gateway process"]
-        SK["Skills dir<br/>(gog installed by clawhub)"]
-        GOG["gogcli keyring<br/>(tokens after google-auth)"]
-    end
-
-    MK -->|"make env / init"| ENV
-    MK -->|"make google-credentials"| CRED
-    MK -->|"make onboard"| OC
-    MK -->|"make google-setup"| SK
-    MK -->|"make google-auth"| GOG
-
-    ENV -->|"docker compose env_file"| GW
-    DATA -->|"volume mount"| OC
-    DATA --> SK
-    CRED -->|"mount → ~/.config/gogcli"| GOG
-
-    GW --> OC
-    GW --> SK
-    SK --> GOG
 ```
-
-### What each step actually does
-
-| Step | What happens | Who reads it |
-|---|---|---|
-| **`make env`** | Copies `.env.example` → `.env` on the host | Docker Compose injects vars into the container process |
-| **`make onboard`** | Runs `openclaw onboard` once; writes **`data/openclaw.json`** (Gemini key, gateway mode, model) | OpenClaw gateway at startup (`~/.openclaw/openclaw.json` via mount) |
-| **`make sync-config`** | Merges `.env` into **`data/openclaw.json`** (WhatsApp allowlist, model, timezone) | OpenClaw gateway at startup |
-| **`make up`** | Starts `node dist/index.js gateway` | Loads `openclaw.json`, starts agent + channel plugins |
-| **`make whatsapp-login`** | Runs OpenClaw channel login; stores WhatsApp Web session under `data/` | OpenClaw WhatsApp plugin |
-| **`make google-credentials`** | Copies Google OAuth **client** JSON → `data/google/credentials.json` | `gog` CLI (`gog auth credentials …`) |
-| **`make google-setup`** | Runs `clawhub install gog` inside the container | Installs the **gog skill** into OpenClaw's skills directory |
-| **`make google-auth`** | Runs `gog auth add` — browser OAuth for **`GOG_ACCOUNT`** | Stores **refresh tokens** in `data/google/` (gogcli keyring) |
-
-**So does OpenClaw "just find the JSON"?** Partially — there are **three different things**, not one magic file:
-
-1. **`openclaw.json`** — main app config. Created by **`make onboard`**, not by dropping a file in the repo. Lives in `data/` after first run.
-2. **`credentials.json`** — Google OAuth *client* ID/secret from Cloud Console. You copy it with **`make google-credentials`**. Used by the `gog` tool, not read directly by the gateway.
-3. **gog tokens / keyring** — created by **`make google-auth`** after you approve OAuth in a browser. The **gog skill** uses these to call Gmail/Calendar APIs.
-
-OpenClaw discovers installed skills (like `gog`) from its skills directory and exposes them to the agent when authenticated. No custom code in this repo — we mount the right folders and run the upstream CLIs.
-
-### Config sync (`.env` → `openclaw.json`)
-
-Selected `.env` values are merged into **`data/openclaw.json`** by `make sync-config`:
-
-| `.env` variable | `openclaw.json` path |
-|---|---|
-| `WHATSAPP_ALLOW_FROM` | `channels.whatsapp.allowFrom` (comma-separated → array) |
-| `WHATSAPP_ENABLED` | `channels.whatsapp.enabled` |
-| `OPENCLAW_MODEL` | `agents.defaults.model.primary` |
-| `TZ` | `agents.defaults.timezone` |
-
-Runs automatically after **`make onboard`** and before **`make up`**. Re-run after editing `.env`:
-
-```bash
-make sync-config
-make restart
+data/
+├── .zeroclaw/config.toml    # generated / synced
+└── data/                    # ZeroClaw workspace / memory
 ```
 
 ---
 
 ## Environment variables
 
-Configuration is supplied via a `.env` file at the project root. The container reads these values at startup.
-
-### Core
-
 | Variable | Required | Description |
 |---|---|---|
-| `GEMINI_API_KEY` | Yes | Google Gemini API key |
-| `OPENCLAW_MODEL` | No | Primary model, e.g. `google/gemini-2.5-pro` |
-| `OPENCLAW_GATEWAY_PORT` | No | Gateway listen port (default: `18789`) |
-| `OPENCLAW_GATEWAY_TOKEN` | No | Machine auth token for the gateway UI/API |
-| `OPENCLAW_GATEWAY_PASSWORD` | No | Human-friendly gateway password |
-
-### Messaging — WhatsApp
-
-See [docs/whatsapp.md](docs/whatsapp.md). SMS is **not** used by this repo.
-
-| Variable | Required | Description |
-|---|---|---|
-| `WHATSAPP_ALLOW_FROM` | Yes* | Your number (E.164) — only this number can command the bot; synced via `make sync-config` |
-| `WHATSAPP_ENABLED` | No | Default `true`; set `false` to disable WhatsApp |
-
-\*For Path A (Message yourself), this is your own mobile number.
-
-<details>
-<summary>SMS / Twilio (optional — not implemented)</summary>
-
-Future placeholder only. Leave blank.
-
-| Variable | Description |
-|---|---|
-| `SMS_PROVIDER` | e.g. `twilio` |
-| `TWILIO_ACCOUNT_SID` | Twilio account SID |
-| `TWILIO_AUTH_TOKEN` | Twilio auth token |
-| `TWILIO_PHONE_NUMBER` | Twilio send-from number |
-| `SMS_ALLOW_FROM` | Allowlisted command numbers |
-
-</details>
-
-### Google Workspace (gog skill)
-
-Use a **dedicated bot Gmail** — see [docs/google-workspace.md](docs/google-workspace.md).
-
-| Variable | Required | Description |
-|---|---|---|
-| `GOG_ACCOUNT` | For Google | Bot Gmail address, e.g. `yourname-openclaw@gmail.com` |
-| `GOG_KEYRING_PASSWORD` | For Google | Encrypts OAuth tokens in Docker (pick a long random string) |
-| `GOG_KEYRING_BACKEND` | No | Default `file` — required for headless/container use |
-
-Install OAuth client JSON with `make google-credentials SRC=/path/to/client_secret.json` (not via env vars). Optional legacy vars `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` are unused by the gog flow today.
-
-**Google Cloud setup:** full walkthrough in [docs/google-workspace.md](docs/google-workspace.md).
-
-### Flight research
-
-Default: **`make flights-setup`** installs the [`flights-search`](docs/flights.md) skill (Google Flights–style data, **no API key**).
-
-| Variable | Required | Description |
-|---|---|---|
-| `SEARCHAPI_KEY` | No | Paid upgrade — SearchAPI.io + `google-flights-search` skill |
-| `FLIGHT_API_KEY` | No | Paid upgrade — Amadeus, Aviationstack, etc. |
-| `FLIGHT_API_PROVIDER` | No | Provider identifier for paid API |
-| `GOOGLE_CUSTOM_SEARCH_KEY` | No | Legacy fallback for web search |
-| `GOOGLE_CUSTOM_SEARCH_CX` | No | Custom Search engine ID |
-
-When no flight skill is installed, the agent can still use bundled web search / browser skills (less reliable for fares).
-
-### Example `.env`
-
-```env
-# --- Gemini ---
-GEMINI_API_KEY=AIza...
-OPENCLAW_MODEL=google/gemini-2.5-pro
-
-# --- Gateway ---
-OPENCLAW_GATEWAY_PORT=18789
-OPENCLAW_GATEWAY_PASSWORD=change-me
-
-# --- WhatsApp ---
-WHATSAPP_ALLOW_FROM=+15551234567
-
-# --- Google (dedicated bot Gmail) ---
-GOG_ACCOUNT=yourname-openclaw@gmail.com
-GOG_KEYRING_PASSWORD=change-me
-
-# --- Flights: make flights-setup (no key). Paid upgrades optional ---
-```
+| `GEMINI_API_KEY` | Yes | Google AI Studio key |
+| `GEMINI_MODEL` | No | Default `gemini-2.5-flash` |
+| `TELEGRAM_BOT_TOKEN` | Yes | From BotFather |
+| `TELEGRAM_ALLOWED_USERS` | Yes | Comma-separated numeric user IDs |
+| `ZEROCLAW_IMAGE` | No | Default `ghcr.io/zeroclaw-labs/zeroclaw:latest` |
+| `DEPLOY_HOST` | Remote | Server hostname/IP for `make remote-*` |
+| `DEPLOY_USER` | Remote | SSH user (default `ubuntu`) |
+| `DEPLOY_PATH` | Remote | Remote project dir (default `/opt/zeroclaw`) |
+| `DEPLOY_SSH_PORT` | Remote | SSH port (default `22`) |
+| `DEPLOY_SSH_KEY` | Remote | Path to private key (optional) |
 
 ---
 
-## OpenClaw configuration (reference)
+## Efficiency defaults
 
-The gateway reads `openclaw.json` from the persistent data volume (`./data` → `/home/node/.openclaw`). **`make onboard` creates this file** on first run. Example shape after onboarding (WhatsApp allowlist may need manual edit):
-
-```json5
-{
-  gateway: { mode: "local", port: 18789 },
-  agents: {
-    defaults: {
-      model: { primary: "google/gemini-2.5-pro" },
-      workspace: "/home/node/.openclaw/workspace",
-      heartbeat: { every: "0m" },
-    },
-  },
-  channels: {
-    whatsapp: {
-      allowFrom: ["+15551234567"],  // synced from WHATSAPP_ALLOW_FROM via make sync-config
-    },
-  },
-}
-```
-
-Automatic `.env` → `openclaw.json` sync covers WhatsApp allowlist, model, and timezone — see [Config sync](#config-sync-env--openclawjson). Other settings still use the Control UI or manual edits.
-
----
-
-## Skills & integrations
-
-```mermaid
-mindmap
-  root((OpenClaw Agent))
-    Google Workspace
-      Gmail read/send
-      Calendar CRUD
-      Drive search
-      Docs summarize
-    Messaging
-      WhatsApp linked device
-      Telegram optional
-    Research
-      Web search
-      Browser automation
-      Flight APIs
-    Memory
-      Per-sender sessions
-      Daily session reset
-```
-
-| Skill | Install | Purpose |
-|---|---|---|
-| `gog` | `make google-setup` | Gmail, Calendar, Drive, Docs via OAuth |
-| `flights-search` | `make flights-setup` | Google Flights search — **no API key** |
-| `web-search` | bundled / clawhub | General research |
-| `browser` | bundled | Scrape pages, fallback |
-| `google-flights-search` | clawhub (needs `SEARCHAPI_KEY`) | Paid structured Google Flights JSON |
-
----
-
-## Example conversations
-
-**Calendar**
-
-> **You:** What's free tomorrow afternoon?  
-> **Bot:** You're open 1–3 PM and after 4:30 PM. You have "Team sync" at 11 AM.
-
-**Schedule + invite**
-
-> **You:** Book a 45-min sync with morgan@example.com Friday at 10am, title "Sprint planning"  
-> **Bot:** Created "Sprint planning" Fri 10:00–10:45 AM. Calendar invite sent to morgan@example.com.
-
-**Email**
-
-> **You:** Draft a reply to the last email from Acme Corp saying we'll review the proposal by EOD  
-> **Bot:** Here's a draft: … Reply "send it" to dispatch, or tell me what to change.
-
-**Flights**
-
-> **You:** Nonstop LAX → ORD leaving June 28, returning July 2, under $400 if possible  
-> **Bot:** Found 3 options: (1) United $347 dep 7:15 AM … (2) … Want me to open the booking link?
-
-**Research**
-
-> **You:** What are the visa requirements for US citizens visiting Japan for 2 weeks?  
-> **Bot:** US citizens don't need a visa for tourism stays up to 90 days … [sources]
-
----
-
-## Security
-
-```mermaid
-flowchart TD
-    A[Use dedicated assistant phone number] --> B[Allowlist sender numbers only]
-    B --> C[Bind gateway to localhost or VPN]
-    C --> D[Store secrets in .env — never commit]
-    D --> E[Use a dedicated Google account or limited scopes]
-    E --> F[Start with heartbeat disabled]
-    F --> G[Review agent actions before enabling write-heavy scopes]
-```
-
-- **Never commit** `.env`, `credentials.json`, or OAuth token files.
-- Add `.env` and `data/` to `.gitignore`.
-- Restrict filesystem permissions on token files (`chmod 600`).
-- Prefer a **dedicated Google account** for the agent rather than your primary inbox.
-- Start with read-only Google scopes; enable send/write after you trust behavior.
-- Keep `agents.defaults.heartbeat.every` at `"0m"` until proactive scheduling is desired.
-- Run the gateway behind a firewall; expose port `18789` only on localhost or through an SSH tunnel.
+- Prebuilt GHCR image (no source build in this repo)
+- **No published ports**
+- `mem_limit: 512m`, `cpus: 2.0`
+- Distroless image — use `make shell` (debian tag) only for debugging
+- Dashboard may exist inside the image; we never expose it
 
 ---
 
@@ -507,67 +117,27 @@ flowchart TD
 
 ```
 docker_open_claw/
-├── docker-compose.yml       # Service, volumes, env passthrough
-├── Dockerfile               # Thin layer on ghcr.io/openclaw/openclaw
-├── Makefile                 # Setup orchestration (make help)
-├── scripts/
-│   └── sync-config.js       # .env → openclaw.json merge
-├── .env.example             # Template — copy via make env
-├── docs/
-│   ├── whatsapp.md          # WhatsApp — Message yourself (easiest) or second number
-│   ├── google-workspace.md  # Dedicated Gmail + OAuth
-│   └── flights.md           # Flight search skill
-├── config/google/           # Docs only; creds go in data/google/
-└── data/                    # Gitignored runtime state (volume mounts)
-    ├── openclaw.json        # Created by make onboard
-    ├── workspace/
-    └── google/
-        ├── credentials.json # OAuth client (make google-credentials)
-        └── keyring/         # Tokens after make google-auth
+├── docker-compose.yml
+├── Dockerfile                 # optional FROM official image
+├── Makefile
+├── .env.example
+├── config/config.toml.example
+├── scripts/sync-config.js     # host-side .env → config.toml
+├── scripts/remote.ps1         # Windows → Ubuntu deploy
+├── scripts/remote.sh          # Linux/WSL → Ubuntu deploy
+├── docs/telegram.md
+├── docs/deploy.md
+└── data/                      # gitignored runtime state
 ```
 
 ---
 
 ## Roadmap
 
-See [TODO.md](TODO.md) for the living checklist. Summary:
-
-- [x] Docker Compose + Makefile + `.env.example`
-- [x] Gemini via `make onboard`
-- [x] Google Workspace via gog skill + [docs/google-workspace.md](docs/google-workspace.md)
-- [x] Health checks + persistent volumes
-- [x] `.env` → `openclaw.json` sync (`make sync-config`)
-- [x] Flight search via `flights-search` + [docs/flights.md](docs/flights.md)
-- [ ] SMS / Twilio channel
-- [ ] CI (compose validate, hadolint)
-
----
-
-## Troubleshooting
-
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| QR code won't scan | Session expired or wrong phone | `make whatsapp-login` |
-| "Unauthorized sender" | Number not in allowlist | Edit `channels.whatsapp.allowFrom` in `data/openclaw.json` |
-| Missing credentials.json | OAuth client not installed | `make google-credentials SRC=…` |
-| gog keyring prompt | Missing keyring password | Set `GOG_KEYRING_PASSWORD` in `.env`, `make restart` |
-| Calendar empty | Calendar API not enabled | Enable in Cloud Console, `make google-auth` |
-| Gmail auth wrong account | Signed in as personal Gmail | Re-auth as `GOG_ACCOUNT` — see [docs/google-workspace.md](docs/google-workspace.md) |
-| Gemini errors | Invalid or quota-exceeded key | Check [AI Studio](https://aistudio.google.com/) quotas |
-| Container restarts loop | Missing onboard or bad `.env` | `make onboard`, verify `.env` against `.env.example` |
-
----
-
-## References
-
-- [OpenClaw](https://github.com/openclaw/openclaw) — upstream project
-- [OpenClaw docs — Personal assistant setup](https://docs.openclaw.ai/start/openclaw)
-- [OpenClaw docs — Docker install](https://docs.openclaw.ai/install/docker)
-- [Google AI Studio](https://aistudio.google.com/) — Gemini API keys
-- [Google Workspace setup for this repo](docs/google-workspace.md)
+See [TODO.md](TODO.md). Phase 1 = this lean core. Phase 2 = Google Workspace / flights via ZeroClaw tools or MCP.
 
 ---
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE).
+Apache License 2.0 — see [LICENSE](LICENSE). ZeroClaw itself is MIT OR Apache-2.0 ([upstream](https://github.com/zeroclaw-labs/zeroclaw)).

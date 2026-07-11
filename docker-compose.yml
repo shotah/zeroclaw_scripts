@@ -1,57 +1,35 @@
+# Lean ZeroClaw stack — Gemini + Telegram, no host ports (Telegram polls).
+# Docs: https://github.com/zeroclaw-labs/zeroclaw/blob/master/docs/book/src/setup/container.md
+
 services:
-  openclaw:
-    build:
-      context: .
-      args:
-        OPENCLAW_BASE: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}
-    image: docker-open-claw:latest
-    container_name: openclaw
+  zeroclaw:
+    image: ${ZEROCLAW_IMAGE:-ghcr.io/zeroclaw-labs/zeroclaw:latest}
+    container_name: zeroclaw
+    restart: unless-stopped
     env_file:
       - path: .env
         required: false
     environment:
-      HOME: /home/node
-      NODE_ENV: production
-      TZ: ${TZ:-UTC}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      OPENCLAW_MODEL: ${OPENCLAW_MODEL:-google/gemini-2.5-pro}
-      OPENCLAW_GATEWAY_BIND: ${OPENCLAW_GATEWAY_BIND:-lan}
-      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
-      OPENCLAW_GATEWAY_PASSWORD: ${OPENCLAW_GATEWAY_PASSWORD:-}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-      GOG_ACCOUNT: ${GOG_ACCOUNT:-}
-      GOG_KEYRING_BACKEND: ${GOG_KEYRING_BACKEND:-file}
-      GOG_KEYRING_PASSWORD: ${GOG_KEYRING_PASSWORD:-}
-    ports:
-      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
+      HOME: /zeroclaw-data
+      ZEROCLAW_DATA_DIR: /zeroclaw-data/data
+      # Schema-mirror overrides (secrets stay in .env, not baked into image)
+      ZEROCLAW_providers__models__gemini__default__api_key: ${GEMINI_API_KEY:-}
+      ZEROCLAW_providers__models__gemini__default__model: ${GEMINI_MODEL:-gemini-2.5-flash}
+      ZEROCLAW_channels__telegram__default__bot_token: ${TELEGRAM_BOT_TOKEN:-}
+      ZEROCLAW_channels__telegram__default__enabled: "true"
+      # Gateway stays internal — do not publish ports for Telegram-only
+      ZEROCLAW_gateway__host: "127.0.0.1"
+      ZEROCLAW_gateway__port: "42617"
+      ZEROCLAW_gateway__allow_public_bind: "false"
     volumes:
-      - ${OPENCLAW_CONFIG_DIR:-./data}:/home/node/.openclaw
-      - ${OPENCLAW_WORKSPACE_DIR:-./data/workspace}:/home/node/.openclaw/workspace
-      - ./data/google:/home/node/.config/gogcli
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    init: true
-    restart: unless-stopped
-    command:
-      [
-        "node",
-        "dist/index.js",
-        "gateway",
-        "--bind",
-        "${OPENCLAW_GATEWAY_BIND:-lan}",
-        "--port",
-        "18789",
-      ]
+      - ./data:/zeroclaw-data
+    # No ports: — Telegram long-polls outbound; no inbound webhook needed.
+    mem_limit: 512m
+    cpus: 2.0
+    mem_reservation: 32m
     healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://127.0.0.1:18789/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
-        ]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+      test: ["CMD", "zeroclaw", "status", "--format=exit-code"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

@@ -2,21 +2,23 @@
 'use strict';
 
 /**
- * Merge selected .env values into data/openclaw.json.
- * Runs on the host (reads .env from repo root) or inside the container (env from compose).
+ * Sync .env → data/.zeroclaw/config.toml from config/config.toml.example.
+ * Host-side only (no Node in the container). Requires Node on the host for sync.
  */
 
 const fs = require('fs');
 const path = require('path');
 
-const repoRoot = path.resolve(__dirname, '..');
-const hostConfig = path.join(repoRoot, 'data', 'openclaw.json');
-const hostEnv = path.join(repoRoot, '.env');
-const containerConfig = path.join('/home/node/.openclaw', 'openclaw.json');
+const root = path.resolve(__dirname, '..');
+const envPath = path.join(root, '.env');
+const examplePath = path.join(root, 'config', 'config.toml.example');
+const outDir = path.join(root, 'data', '.zeroclaw');
+const outPath = path.join(outDir, 'config.toml');
 
-function loadDotEnv(envPath) {
-  if (!fs.existsSync(envPath)) return;
-  for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+function loadDotEnv(file) {
+  const env = {};
+  if (!fs.existsSync(file)) return env;
+  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
     const eq = trimmed.indexOf('=');
@@ -29,93 +31,59 @@ function loadDotEnv(envPath) {
     ) {
       val = val.slice(1, -1);
     }
-    if (process.env[key] === undefined) process.env[key] = val;
+    env[key] = val;
   }
+  return env;
 }
 
-function resolveConfigPath() {
-  if (fs.existsSync(hostConfig)) {
-    loadDotEnv(hostEnv);
-    return hostConfig;
-  }
-  if (fs.existsSync(containerConfig)) return containerConfig;
-  return hostConfig;
-}
-
-function parseList(value) {
-  if (!value || !String(value).trim()) return null;
-  return String(value)
+function tomlStringArray(csv) {
+  const items = String(csv || '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-}
-
-function ensurePath(obj, keys) {
-  let cur = obj;
-  for (let i = 0; i < keys.length - 1; i++) {
-    if (cur[keys[i]] === undefined || typeof cur[keys[i]] !== 'object') {
-      cur[keys[i]] = {};
-    }
-    cur = cur[keys[i]];
-  }
-  return cur;
-}
-
-function setPath(obj, keys, value) {
-  const parent = ensurePath(obj, keys);
-  parent[keys[keys.length - 1]] = value;
+  if (items.length === 0) return '[]';
+  return `[${items.map((id) => `"${id.replace(/"/g, '')}"`).join(', ')}]`;
 }
 
 function main() {
-  const configPath = resolveConfigPath();
-
-  if (!fs.existsSync(configPath)) {
-    console.error(`Missing ${configPath}`);
-    console.error('Run: make onboard');
+  if (!fs.existsSync(examplePath)) {
+    console.error(`Missing ${examplePath}`);
     process.exit(1);
   }
 
-  const raw = fs.readFileSync(configPath, 'utf8').replace(/^\uFEFF/, '');
-  const config = JSON.parse(raw);
-  const updates = [];
+  const fileEnv = loadDotEnv(envPath);
+  const get = (k, fallback = '') =>
+    process.env[k] !== undefined && process.env[k] !== ''
+      ? process.env[k]
+      : fileEnv[k] !== undefined
+        ? fileEnv[k]
+        : fallback;
 
-  const allowFrom = parseList(process.env.WHATSAPP_ALLOW_FROM);
-  if (allowFrom?.length) {
-    setPath(config, ['channels', 'whatsapp', 'allowFrom'], allowFrom);
-    updates.push(`channels.whatsapp.allowFrom = [${allowFrom.join(', ')}]`);
-  }
+  const model = get('GEMINI_MODEL', 'gemini-2.5-flash');
+  const allowed = tomlStringArray(get('TELEGRAM_ALLOWED_USERS', ''));
 
-  const whatsappEnabled = process.env.WHATSAPP_ENABLED?.trim().toLowerCase();
-  if (whatsappEnabled === 'false' || whatsappEnabled === '0') {
-    setPath(config, ['channels', 'whatsapp', 'enabled'], false);
-    updates.push('channels.whatsapp.enabled = false');
-  } else if (whatsappEnabled === 'true' || whatsappEnabled === '1') {
-    setPath(config, ['channels', 'whatsapp', 'enabled'], true);
-    updates.push('channels.whatsapp.enabled = true');
-  }
+  let toml = fs.readFileSync(examplePath, 'utf8');
 
-  const model = process.env.OPENCLAW_MODEL?.trim();
-  if (model) {
-    setPath(config, ['agents', 'defaults', 'model', 'primary'], model);
-    updates.push(`agents.defaults.model.primary = ${model}`);
-  }
+  // Replace model line under gemini.default
+  toml = toml.replace(
+    /(\[providers\.models\.gemini\.default\][\s\S]*?model\s*=\s*")[^"]*(")/,
+    `$1${model}$2`
+  );
 
-  const tz = process.env.TZ?.trim();
-  if (tz) {
-    if (!config.agents) config.agents = {};
-    if (!config.agents.defaults) config.agents.defaults = {};
-    config.agents.defaults.timezone = tz;
-    updates.push(`agents.defaults.timezone = ${tz}`);
-  }
+  // Replace allowed_users array under telegram.default
+  toml = toml.replace(
+    /(\[channels\.telegram\.default\][\s\S]*?allowed_users\s*=\s*)\[[^\]]*\]/,
+    `$1${allowed}`
+  );
 
-  if (updates.length === 0) {
-    console.log('No .env values to sync (set WHATSAPP_ALLOW_FROM, OPENCLAW_MODEL, or TZ)');
-    return;
-  }
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.mkdirSync(path.join(root, 'data', 'data'), { recursive: true });
+  fs.writeFileSync(outPath, toml.endsWith('\n') ? toml : `${toml}\n`);
 
-  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
-  console.log(`Synced ${configPath}:`);
-  for (const line of updates) console.log(`  ${line}`);
+  console.log(`Wrote ${outPath}`);
+  console.log(`  providers.models.gemini.default.model = ${model}`);
+  console.log(`  channels.telegram.default.allowed_users = ${allowed}`);
+  console.log('  api_key / bot_token come from compose env overrides (.env)');
 }
 
 main();

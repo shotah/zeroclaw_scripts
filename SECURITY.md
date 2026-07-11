@@ -1,21 +1,14 @@
 # Security Policy
 
-## Supported Versions
-
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
-
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
-
 ## Reporting a Vulnerability
 
-Use this section to tell people how to report a vulnerability.
+For **this wrapper repo**, open a private security advisory or contact the maintainer.
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+For **ZeroClaw itself**, follow upstream policy: email `security@zeroclaw.dev` — see [zeroclaw SECURITY.md](https://github.com/zeroclaw-labs/zeroclaw/blob/master/SECURITY.md). Do not file public issues for ZeroClaw vulns here.
+
+## Hardening defaults in this stack
+
+- Telegram allowlist (`TELEGRAM_ALLOWED_USERS`) — keep non-empty
+- No published host ports (Telegram polls outbound only)
+- Secrets in `.env` only — never commit
+- Treat `./data` as sensitive (config, memory, sessions)

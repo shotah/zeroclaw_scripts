@@ -4,9 +4,8 @@
     "redhat.vscode-yaml",
     "ms-vscode.makefile-tools",
     "mikestead.dotenv",
+    "tamasfe.even-better-toml",
     "bierner.markdown-mermaid",
-    "yzhang.markdown-all-in-one",
-    "davidanson.vscode-markdownlint",
     "streetsidesoftware.code-spell-checker",
     "editorconfig.editorconfig"
   ],

@@ -1,133 +1,56 @@
-# TODO — docker_open_claw
+# TODO — ZeroClaw lean stack
 
-OpenClaw does the heavy lifting. This repo is mostly **Docker glue**: image, volumes, `.env`, and Make targets. There is almost no application code — and that's intentional.
+This repo is a thin Docker wrapper around [ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw): **Gemini + Telegram**, no WhatsApp, no published gateway.
 
 ---
 
-## Try it now (first-run checklist)
-
-Do these in order. Docker Desktop must be running.
+## Phase 1 — try it now
 
 ```bash
-make init                    # .env + data/ dirs
-# Edit .env — at minimum set GEMINI_API_KEY and WHATSAPP_ALLOW_FROM
-
-make build                   # wraps ghcr.io/openclaw/openclaw
-make onboard                 # one-time OpenClaw setup (writes data/openclaw.json)
-make up                      # start gateway
-make logs                    # confirm gateway is healthy
-
-make whatsapp-login          # scan QR → Message yourself chat (docs/whatsapp.md)
-# Open http://127.0.0.1:18789 — paste OPENCLAW_GATEWAY_TOKEN from .env
-
-# Message the assistant number from a phone in WHATSAPP_ALLOW_FROM
+make init
+# Edit .env: GEMINI_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_USERS
+make sync-config
+make up
+make logs
+# Message the bot on Telegram
 ```
 
-### Google Workspace (Gmail, Calendar, Docs)
+Guide: [docs/telegram.md](docs/telegram.md)
 
-**Use a dedicated bot Gmail** — not your personal account. See [docs/google-workspace.md](docs/google-workspace.md) for why and how.
+### Checklist
 
-```bash
-# 1. Create yourname-openclaw@gmail.com + Google Cloud OAuth (Desktop app)
-# 2. Set GOG_ACCOUNT and GOG_KEYRING_PASSWORD in .env
-
-make google-credentials SRC=/path/to/client_secret.json
-make restart                 # pick up GOG_* env vars
-make google-setup            # verify creds + install gog skill
-make google-auth             # OAuth in browser (sign in as GOG_ACCOUNT)
-make google-status           # confirm connected
-```
-
-Optional: share a personal calendar *into* the bot account so it sees your real schedule without OAuth on your primary inbox.
-
-### Flights (Google Flights search)
-
-No API key for the default path. See [docs/flights.md](docs/flights.md).
-
-```bash
-make flights-setup            # after make up
-```
-
-Try: *"Find nonstop SFO to JFK next Friday under $400"*
+- [x] Pivot from OpenClaw / Node to ZeroClaw image
+- [x] Telegram-only channel (no WhatsApp / SMS)
+- [x] Gemini provider via `.env` + config template
+- [x] No host port publish; 512M mem limit
+- [x] Slim Makefile (`init` / `up` / `logs` / `status`)
+- [x] Remote deploy from Windows via SSH (`make remote-deploy`) — [docs/deploy.md](docs/deploy.md)
+- [ ] Container healthy (`make status` or `make remote-status`)
+- [ ] Telegram reply from Gemini works
 
 ---
 
-## What's already done
+## Phase 2 — integrations (deferred)
 
-- [x] README with architecture + Mermaid communication diagrams
-- [x] `Dockerfile` — thin layer on official OpenClaw image (gogcli config dir)
-- [x] `docker-compose.yml` — volumes, health check, Gemini + GOG env passthrough
-- [x] `.env.example`, `.gitignore`, `Makefile` with help + docker targets
-- [x] VS Code / Cursor workspace settings + recommended extensions
-- [x] Persistent `data/` layout for config, workspace, Google creds
-- [x] **Google Workspace guide** — [docs/google-workspace.md](docs/google-workspace.md)
-- [x] **Make targets** — `google-credentials`, `google-setup`, `google-auth`, `google-status`
-- [x] **Flight search** — [docs/flights.md](docs/flights.md), `make flights-setup`
+- [ ] Google Calendar / Gmail via ZeroClaw tools or MCP
+- [ ] Flight search tool
+- [ ] Optional `127.0.0.1:42617` gateway publish for zerocode TUI
+- [ ] Pin `ZEROCLAW_IMAGE` to a specific `v0.x.y` tag
+- [ ] CI: `docker compose config` validate
 
 ---
 
-## Known gaps (manual today)
+## Cut from the old OpenClaw design
 
-These are the things that **don't auto-magic yet** — you do them once by hand or via Make targets above.
-
-| Gap | Impact | Workaround |
-|---|---|---|
-| **First-run onboard** | Gateway won't have model/auth config until onboard runs | `make onboard` (once) |
-| **Paid flight APIs** | Live tracking / price alerts need extra keys | `flights-search` is free; see [docs/flights.md](docs/flights.md) upgrades |
-| **SMS / Twilio** | Not implemented | Use WhatsApp or Telegram — [docs/whatsapp.md](docs/whatsapp.md) |
-| **Image pin** | `latest` can break on upstream regressions | Set `OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:2026.3.7` in `.env` for production |
+| Removed | Why |
+|---|---|
+| WhatsApp / QR / Message yourself | Heavy session; Telegram is simpler |
+| clawhub / gog / flights-search | OpenClaw-specific; revisit under ZeroClaw |
+| Control UI happy path | No published ports; dashboard optional |
+| Node gateway always-on | Replaced by Rust daemon |
 
 ---
 
-## Future enhancements
+## Notes after first run
 
-### High value
-
-- [x] **`.env` → `openclaw.json` sync** — `make sync-config` (WhatsApp allowlist, model, TZ)
-- [ ] **`make onboard` idempotency** — skip or warn if already onboarded
-- [ ] **Pin default image tag** in `.env.example` (avoid broken `latest` releases)
-- [ ] **Document post-onboard allowlist edit** — one-liner `config set` for WhatsApp numbers
-
-### Integrations
-
-- [ ] Optional Twilio SMS channel in compose
-- [ ] Paid flight upgrades (SearchAPI / Amadeus) if needed
-
-### Ops & quality
-
-- [ ] `scripts/entrypoint.sh` — render config before gateway start
-- [ ] GitHub Actions: validate `docker compose config`, hadolint Dockerfile
-- [ ] README roadmap section — sync checkboxes with this file
-
-### Nice to have
-
-- [ ] `.vscode/tasks.json` — Run `make up`, `make logs` from command palette
-
----
-
-## "Should it just work?"
-
-**Mostly yes**, with one honest caveat:
-
-1. **OpenClaw is the product** — messaging, agent loop, skills, gateway UI all ship upstream.
-2. **This repo is the lunchbox** — keeps config on `./data`, reads `.env`, gives you `make` shortcuts.
-3. **You still do first-run setup once** — onboard, WhatsApp QR, allowlist, Google OAuth. That's normal for self-hosted agents; it's intentional security (OAuth + pairing).
-
-If something fails, check `make logs` first, then the [README troubleshooting](README.md#troubleshooting) table.
-
----
-
-## After your first successful run
-
-Come back and check off what worked:
-
-- [ ] Container healthy (`make ps`)
-- [ ] Control UI loads at http://127.0.0.1:18789
-- [ ] WhatsApp paired
-- [ ] Test message gets a Gemini reply
-- [ ] Dedicated bot Gmail created (not personal)
-- [ ] Google OAuth connected (`make google-status`)
-- [ ] Calendar / Gmail test from WhatsApp
-- [ ] Flight search test from WhatsApp (`make flights-setup`)
-
-Note any breakage here or open an issue — that's how the TODO list shrinks.
+Record breakage here (schema mismatches, pairing prompts, allowlist quirks) so we can tighten `config/config.toml.example`.

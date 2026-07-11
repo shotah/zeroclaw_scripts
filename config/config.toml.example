@@ -1,0 +1,42 @@
+# Minimal ZeroClaw config — Gemini + Telegram.
+# Secrets are injected at runtime via .env / compose schema-mirror env vars.
+# Synced into data/.zeroclaw/config.toml by: make sync-config
+#
+# Schema: https://github.com/zeroclaw-labs/zeroclaw (providers.models.<family>.<alias>)
+
+[providers.models.gemini.default]
+model = "gemini-2.5-flash"
+# api_key filled from GEMINI_API_KEY via ZEROCLAW_providers__models__gemini__default__api_key
+
+[agents.main]
+enabled = true
+default = true
+model_provider = "gemini.default"
+risk_profile = "default"
+channels = ["telegram.default"]
+
+[channels.telegram.default]
+enabled = true
+# bot_token filled from TELEGRAM_BOT_TOKEN via env override
+allowed_users = []
+
+[gateway]
+host = "127.0.0.1"
+port = 42617
+allow_public_bind = false
+require_pairing = false
+
+[risk_profiles.default]
+level = "supervised"
+auto_approve = [
+  "file_read",
+  "file_write",
+  "file_edit",
+  "memory_recall",
+  "memory_store",
+  "web_search_tool",
+  "web_fetch",
+  "calculator",
+  "glob_search",
+  "content_search",
+]
