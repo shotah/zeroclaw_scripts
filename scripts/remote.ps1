@@ -118,25 +118,24 @@ switch ($Action) {
       node (Join-Path $Root 'scripts/sync-config.js')
     }
 
-    Write-Host "Ensuring remote dir ${deployPath}"
-    Invoke-Remote "mkdir -p '${deployPath}/data/data' '${deployPath}/config' '${deployPath}/scripts' '${deployPath}/docs' '${deployPath}/secrets/google'"
+    # Single source of truth shared with remote.sh (see scripts/deploy-manifest.txt)
+    $manifest = Join-Path $Root 'scripts/deploy-manifest.txt'
+    if (-not (Test-Path -LiteralPath $manifest)) {
+      throw "Missing sync manifest: scripts/deploy-manifest.txt"
+    }
+    $files = Get-Content -LiteralPath $manifest |
+      ForEach-Object { $_.Trim() } |
+      Where-Object { $_ -and -not $_.StartsWith('#') }
 
-    $files = @(
-      'docker-compose.yml',
-      'Makefile',
-      '.env',
-      '.env.example',
-      'Dockerfile',
-      'config/config.toml.example',
-      'config/config.toml',
-      'scripts/sync-config.js',
-      'docs/telegram.md',
-      'docs/whatsapp.md',
-      'docs/google-workspace.md',
-      'docs/deploy.md',
-      'README.md',
-      'secrets/google/.gitkeep'
-    )
+    # Remote dirs = runtime data dir + every parent directory in the manifest
+    $dirs = @('data/data')
+    $dirs += $files | ForEach-Object { ($_ -replace '\\', '/') } |
+      Where-Object { $_.Contains('/') } |
+      ForEach-Object { $_.Substring(0, $_.LastIndexOf('/')) }
+    $mkdirArg = ($dirs | Sort-Object -Unique | ForEach-Object { "'${deployPath}/$_'" }) -join ' '
+    Write-Host "Ensuring remote dirs under ${deployPath}"
+    Invoke-Remote "mkdir -p $mkdirArg"
+
     foreach ($f in $files) {
       $local = Join-Path $Root $f
       if (-not (Test-Path $local)) {
@@ -149,20 +148,8 @@ switch ($Action) {
       if ($LASTEXITCODE -ne 0) { throw "scp failed: $f" }
     }
 
-    $creds = Join-Path $Root 'secrets/google/credentials.json'
-    if (Test-Path -LiteralPath $creds) {
-      Write-Host "scp secrets/google/credentials.json"
-      & $ScpExe @scpArgs $creds "${target}:${deployPath}/secrets/google/credentials.json"
-      if ($LASTEXITCODE -ne 0) { throw "scp failed: secrets/google/credentials.json" }
-    } else {
+    if (-not (Test-Path -LiteralPath (Join-Path $Root 'secrets/google/credentials.json'))) {
       Write-Host "No secrets/google/credentials.json yet (see docs/google-workspace.md)"
-    }
-
-    $clientSecret = Join-Path $Root 'secrets/google/client_secret.json'
-    if (Test-Path -LiteralPath $clientSecret) {
-      Write-Host "scp secrets/google/client_secret.json"
-      & $ScpExe @scpArgs $clientSecret "${target}:${deployPath}/secrets/google/client_secret.json"
-      if ($LASTEXITCODE -ne 0) { throw "scp failed: secrets/google/client_secret.json" }
     }
 
     # Drop stale gws token cache so a new refresh token's scopes take effect

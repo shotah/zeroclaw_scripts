@@ -28,8 +28,8 @@ endif
 
 help: ## Show available commands
 	@echo.
-	@echo   docker_open_claw  /  ZeroClaw lean
-	@echo   ==================================
+	@echo   tim  /  a lean, self-hosted assistant on ZeroClaw
+	@echo   ================================================
 	@echo   Gemini + Telegram agent in Docker. No WhatsApp. No published ports.
 	@echo.
 	@echo   Quick start (local)
@@ -95,7 +95,6 @@ help: ## Show available commands
 	@echo     docs/google-workspace.md Thin gws image + OAuth (Gmail/Docs/…)
 	@echo     docs/deploy.md         Windows -^> Ubuntu remote deploy
 	@echo     README.md              Overview and architecture
-	@echo     TODO.md                Phase 1 / phase 2 checklist
 	@echo.
 	@echo   Required .env keys: GEMINI_API_KEY  TELEGRAM_BOT_TOKEN  TELEGRAM_ALLOWED_USERS
 	@echo   Remote .env keys:   DEPLOY_HOST  DEPLOY_USER  DEPLOY_PATH  [DEPLOY_SSH_KEY]

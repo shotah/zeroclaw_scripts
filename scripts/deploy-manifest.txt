@@ -1,0 +1,22 @@
+# Files synced to the server by scripts/remote.(ps1|sh) `sync`.
+# One repo-relative path per line. Blank lines and # comment lines are ignored.
+# Missing files are skipped, so optional paths (e.g. secrets) are safe to list.
+# Remote parent directories are created automatically from these paths.
+
+docker-compose.yml
+Makefile
+.env
+.env.example
+Dockerfile
+config/config.toml.example
+config/config.toml
+scripts/sync-config.js
+scripts/deploy-manifest.txt
+docs/telegram.md
+docs/whatsapp.md
+docs/google-workspace.md
+docs/deploy.md
+README.md
+secrets/google/.gitkeep
+secrets/google/credentials.json
+secrets/google/client_secret.json

@@ -1,176 +1,272 @@
-# docker_open_claw → ZeroClaw (lean)
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="tim — a lean, self-hosted assistant on ZeroClaw (Gemini + Telegram, dockerized)" width="100%">
+</p>
 
-A minimal Docker wrapper around **[ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw)** — a single Rust binary agent runtime. This repo wires **Gemini + Telegram**, with optional thin **Google Workspace** (`gws` binary on distroless — not a full Debian image).
+# tim
 
-Upstream: [zeroclaw-labs/zeroclaw](https://github.com/zeroclaw-labs/zeroclaw) · [zeroclawlabs.ai](https://www.zeroclawlabs.ai/)
+**tim** is a lean, self-hosted personal assistant. Under the hood it's a thin wrapper — Make targets, a little PowerShell/Bash, and Docker Compose — around **[ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw)**, a single-binary Rust agent runtime. You chat with Tim over **Telegram**; he thinks with **Gemini** and can act on your **Google Workspace** (Gmail, Docs, Calendar, Drive, …) through the [`gws`](https://github.com/googleworkspace/cli) CLI.
+
+Design goals: **tiny footprint, no inbound ports, one command to deploy.**
+
+- 🦀 One Rust daemon — no Node, no plugin zoo
+- 📴 Telegram long-polls outbound; **nothing is exposed to the internet**
+- 🧠 Gemini via a single `.env` key
+- 🗂️ Optional Google Workspace on a **distroless** image (just the `gws` binary, ~19 MB added)
+- 🚀 Deploy Windows → Ubuntu over SSH with `make remote-deploy`
 
 ---
 
-## Why ZeroClaw here
+## Table of contents
 
-| | OpenClaw (old) | ZeroClaw (now) |
-|---|---|---|
-| Runtime | Node + plugins | Rust `zeroclaw daemon` |
-| Idle RAM | Heavy | Official compose: ~32M reserve / **512M cap** |
-| Chat | WhatsApp Web (QR) | **Telegram bot** (polls out) |
-| Host ports | Gateway UI | **None** (Telegram needs egress only) |
-| Config | JSON + clawhub | One `config.toml` + `.env` |
-| Image | Custom Node | Upstream **distroless** + optional `gws` binary |
+- [Architecture](#architecture)
+- [Quick start (local)](#quick-start-local)
+- [Deploy to a server](#deploy-to-an-ubuntu-server)
+- [How setup works](#how-setup-works)
+- [Documentation](#documentation)
+- [Environment variables](#environment-variables)
+- [Make targets](#make-targets)
+- [Design & efficiency notes](#design--efficiency-notes)
+- [Project layout](#project-layout)
+- [Roadmap](#roadmap)
+- [License](#license)
 
-Google Workspace (Gmail, Docs, Calendar, …): [docs/google-workspace.md](docs/google-workspace.md). Flights still later — see [TODO.md](TODO.md).
+---
+
+## Architecture
+
+The daemon reaches **out** to Telegram and Gemini; nothing dials in. Google Workspace calls go through the `gws` binary baked into the image, authorized by an OAuth token you mount at `secrets/google/`.
 
 ```mermaid
 flowchart LR
-  TG[Telegram] -->|long poll| ZC[zeroclaw daemon]
-  ZC -->|API| GEM[Gemini]
-  ZC -->|gws| GW[Gmail / Docs / Calendar]
-  ZC --- DATA["./data"]
+  You([You / friends]) -->|chat| TG[Telegram]
+  TG <-->|long poll<br/>outbound only| ZC
+
+  subgraph Host["🐳 container (distroless)"]
+    ZC[zeroclaw daemon]
+    GWS[gws binary]
+    ZC -->|exec| GWS
+  end
+
+  ZC -->|HTTPS| GEM[Gemini API]
+  GWS -->|OAuth| GW[Gmail · Docs · Calendar · Drive]
+
+  ZC --- CFG[("./config<br/>config.toml + state")]
+  ZC --- DATA[("./data<br/>memory / workspace")]
+  GWS --- SEC[("./secrets/google<br/>OAuth token")]
+
+  classDef store fill:#161b22,stroke:#30363d,color:#8b949e;
+  class CFG,DATA,SEC store;
+```
+
+**Request lifecycle** — what happens when you message the bot:
+
+```mermaid
+sequenceDiagram
+  participant U as You (Telegram)
+  participant Z as zeroclaw daemon
+  participant G as Gemini
+  participant W as gws → Google
+  U->>Z: "what's on my calendar tonight?"
+  Z->>Z: check peer_groups allowlist
+  Z->>G: prompt + tool schema
+  G-->>Z: call google_workspace(calendar.events.list)
+  Z->>W: gws calendar events list
+  W-->>Z: events JSON
+  Z->>G: tool result
+  G-->>Z: natural-language answer
+  Z-->>U: "You have climbing at 6:00 PM…"
 ```
 
 ---
 
-## Prerequisites
+## Quick start (local)
 
-- Docker + Docker Compose (on the machine that runs the container — often the Ubuntu server)
-- [Gemini API key](https://aistudio.google.com/apikey)
-- Telegram bot token from [@BotFather](https://t.me/BotFather) — [docs/telegram.md](docs/telegram.md)
-- Optional WhatsApp (friend / group): [docs/whatsapp.md](docs/whatsapp.md)
-
-**Google Workspace** (optional, auth on a browser PC — [docs/google-workspace.md](docs/google-workspace.md)):
-
-- [Google Cloud SDK](https://cloud.google.com/sdk) (`gcloud`) — Windows: `choco install gcloudsdk`
-- [`gws`](https://github.com/googleworkspace/cli) CLI
-
----
-
-## Quick start
+Requires Docker + Docker Compose and a [Gemini API key](https://aistudio.google.com/apikey).
 
 ```bash
-make init
+make init          # copy .env.example → .env, make ./data, install config template
 # Edit .env:
 #   GEMINI_API_KEY=...
-#   TELEGRAM_BOT_TOKEN=...
-#   TELEGRAM_ALLOWED_USERS=123456789   # numeric Telegram user id
+#   TELEGRAM_BOT_TOKEN=...            # from @BotFather
+#   TELEGRAM_ALLOWED_USERS=123456789 # your numeric Telegram id
 
-make sync-config
-make build
-make up
-make logs
+make sync-config   # write config/config.toml from .env
+make build         # thin image = distroless + gws
+make up            # start the daemon (no published ports)
+make logs          # watch it connect, then message your bot
 ```
 
-Message your bot on Telegram. That is the whole loop.
-
-Google Workspace (optional): [docs/google-workspace.md](docs/google-workspace.md) — OAuth export into `secrets/google/`, then redeploy.
+That is the whole loop. Bot setup details live in **[docs/telegram.md](docs/telegram.md)**.
 
 ```bash
-make help          # all targets
-make status        # health inside container
+make help          # every target, grouped
+make status        # health check inside the container
 make down          # stop
 ```
 
-### Deploy to an Ubuntu server (from Windows)
+---
 
-You do not need Docker on this PC.
+## Deploy to an Ubuntu server
 
-**1. On the server (once)** — create the deploy folder and fix ownership:
+You do **not** need Docker on your workstation — only the server runs it. Files ship over `scp`, commands run over `ssh`.
 
-```bash
-# Docker + Compose
-sudo apt update
-sudo apt install -y docker.io docker-compose-v2
-sudo usermod -aG docker "$USER"   # log out/in after this
-
-# Project dir (match DEPLOY_PATH in .env — e.g. /zeroclaw)
-sudo mkdir -p /zeroclaw
-sudo chown "$USER:$USER" /zeroclaw
-
-# Put your UID/GID in .env as ZEROCLAW_UID / ZEROCLAW_GID (run: id -u ; id -g)
+```mermaid
+flowchart LR
+  Win[💻 Windows / Linux<br/>workstation] -->|scp compose · .env · config · secrets| Srv
+  Win -->|ssh: docker compose build && up| Srv[🖥️ Ubuntu server]
+  Srv -->|long poll| TG[Telegram]
+  Srv -->|HTTPS| GEM[Gemini]
+  Srv -->|OAuth| GW[Google Workspace]
 ```
 
-No `chown 65534` needed when `ZEROCLAW_UID` matches your login user.
-
-**2. On this PC** — set `DEPLOY_*` and `ZEROCLAW_UID`/`ZEROCLAW_GID` in `.env`, then:
-
 ```bash
-make remote-check
-make remote-deploy    # scp files + docker compose up on the server
-make remote-logs
+# once, set DEPLOY_* and ZEROCLAW_UID/GID in .env, then:
+make remote-check     # verify SSH + Docker on the server
+make remote-deploy    # sync files, build image, docker compose up -d
+make remote-logs      # follow server logs
+make remote-bind      # approve your Telegram id if pairing is requested
 ```
 
-Full guide: [docs/deploy.md](docs/deploy.md).
+Full walkthrough (server prep, UID/GID, OpenSSH on Windows): **[docs/deploy.md](docs/deploy.md)**.
 
 ---
 
 ## How setup works
 
-1. **`make init`** — copies `.env.example`, creates `./data`, installs config template.
-2. **`make sync-config`** — writes `config/config.toml` (model + Telegram allowlist from `.env`).
-3. **`make up`** — runs ZeroClaw with `./data` for runtime state and bind-mounts `config/config.toml` read-only. API key and bot token come from schema-mirror env vars.
-4. Daemon long-polls Telegram; **no host ports are published**.
+```mermaid
+flowchart TD
+  A[".env — your secrets & knobs"] -->|make sync-config| B["config/config.toml"]
+  A -->|schema-mirror env| D[compose environment]
+  B -->|bind mount| E[zeroclaw daemon]
+  D --> E
+  S["secrets/google/*"] -->|bind mount| E
+  E --> R[("./data — memory & workspace")]
+```
+
+1. **`make init`** — seeds `.env`, `./data`, and `config/config.toml` from templates.
+2. **`make sync-config`** — [`scripts/sync-config.js`](scripts/sync-config.js) renders `config/config.toml`: Gemini model + the Telegram allowlist as schema-v3 `peer_groups`.
+3. **`make build` / `make up`** — builds the thin image (upstream distroless + `gws`) and runs the daemon. `GEMINI_API_KEY` and `TELEGRAM_BOT_TOKEN` are injected as env, never written to disk.
+4. The daemon **long-polls** Telegram; **no host ports are published**.
 
 ```
-config/config.toml     # yours — synced / edited by deploy user
-data/                  # container runtime (UID 65534 on the server)
+config/config.toml     # yours — synced/edited by the deploy user (gitignored)
+data/                  # container runtime: memory + workspace (gitignored)
+secrets/google/        # OAuth token for gws (gitignored)
+```
+
+---
+
+## Documentation
+
+Everything lives in [`./docs`](docs). Start with Telegram, add the rest as needed.
+
+| Guide | What it covers | When you need it |
+|---|---|---|
+| 📨 **[docs/telegram.md](docs/telegram.md)** | BotFather token, numeric user id, schema-v3 `peer_groups` allowlist, `make remote-bind` pairing | **Always** — this is the default channel |
+| 🚀 **[docs/deploy.md](docs/deploy.md)** | Ubuntu server prep, UID/GID ownership, OpenSSH on Windows, the `make remote-*` workflow | Running on a real server |
+| 🗂️ **[docs/google-workspace.md](docs/google-workspace.md)** | Free Cloud project, OAuth scopes, `gws auth login/export`, UTF-8 credential export, smoke tests, troubleshooting | Gmail / Docs / Calendar / Drive access |
+| 💬 **[docs/whatsapp.md](docs/whatsapp.md)** | WhatsApp Web vs Meta Cloud API, "Tim as his own number", peer/group allowlists, easier alternatives (Discord/Slack) | Reaching friends who don't use Telegram |
+
+Supporting files: [`SECURITY.md`](SECURITY.md) (hardening defaults & reporting).
+
+```mermaid
+flowchart LR
+  R[README] --> T[telegram.md]
+  R --> D[deploy.md]
+  R --> G[google-workspace.md]
+  R --> W[whatsapp.md]
+  T -. optional .-> W
+  D -. secrets sync .-> G
+  classDef core fill:#1f6feb22,stroke:#1f6feb,color:#79c0ff;
+  classDef opt fill:#6e768122,stroke:#6e7681,color:#8b949e;
+  class T,D core;
+  class G,W opt;
 ```
 
 ---
 
 ## Environment variables
 
+Set in `.env` (copy from [`.env.example`](.env.example)). Secrets are never committed.
+
 | Variable | Required | Description |
 |---|---|---|
-| `GEMINI_API_KEY` | Yes | Google AI Studio key |
-| `GEMINI_MODEL` | No | Default `gemini-3.5-flash` |
-| `TELEGRAM_BOT_TOKEN` | Yes | From BotFather |
-| `TELEGRAM_ALLOWED_USERS` | Yes | Comma-separated numeric user IDs |
-| `ZEROCLAW_BASE` | No | Upstream image baked into the thin build (default `:latest`) |
-| `ZEROCLAW_IMAGE` | No | Local tag after build (default `zeroclaw-gws:local`) |
-| `GWS_VERSION` | No | `gws` release tag (default `v0.22.5`) |
-| `DEPLOY_HOST` | Remote | Server hostname/IP for `make remote-*` |
-| `DEPLOY_USER` | Remote | SSH user (default `ubuntu`) |
-| `DEPLOY_PATH` | Remote | Remote project dir (default `/opt/zeroclaw`) |
-| `DEPLOY_SSH_PORT` | Remote | SSH port (default `22`) |
-| `DEPLOY_SSH_KEY` | Remote | Path to private key (optional) |
+| `GEMINI_API_KEY` | ✅ | [Google AI Studio](https://aistudio.google.com/apikey) key |
+| `GEMINI_MODEL` | — | Default `gemini-3.5-flash` |
+| `TELEGRAM_BOT_TOKEN` | ✅ | From [@BotFather](https://t.me/BotFather) |
+| `TELEGRAM_ALLOWED_USERS` | ✅ | Comma-separated numeric user IDs (become `peer_groups` members) |
+| `ZEROCLAW_BASE` | — | Upstream image baked into the build (default `:latest`) |
+| `ZEROCLAW_IMAGE` | — | Local tag after build (default `zeroclaw-gws:local`) |
+| `GWS_VERSION` | — | `gws` release tag (default `v0.22.5`) |
+| `ZEROCLAW_UID` / `ZEROCLAW_GID` | server | Match the server login user (`id -u` / `id -g`) |
+| `DEPLOY_HOST` | remote | Server hostname / IP |
+| `DEPLOY_USER` | remote | SSH user (default `ubuntu`) |
+| `DEPLOY_PATH` | remote | Remote project dir (e.g. `/zeroclaw`) |
+| `DEPLOY_SSH_PORT` | remote | SSH port (default `22`) |
+| `DEPLOY_SSH_KEY` | remote | Path to private key (optional) |
 
 ---
 
-## Efficiency defaults
+## Make targets
 
-- Thin build: upstream **distroless** + single `gws` binary (no full Debian)
-- **No published ports**
-- `mem_limit: 512m`, `cpus: 2.0`
-- Dashboard may exist inside the image; we never expose it
+```bash
+make help            # full grouped list
+```
+
+| Local | Remote (Windows/Linux → server) |
+|---|---|
+| `init`, `env`, `dirs`, `config` | `remote-check` — SSH + Docker probe |
+| `sync-config` — `.env` → `config.toml` | `remote-deploy` — sync + build + up |
+| `build` — thin distroless + `gws` | `remote-sync` — scp files & secrets |
+| `up` / `down` / `restart` | `remote-up` / `remote-down` / `remote-restart` |
+| `logs` / `ps` / `status` | `remote-logs` / `remote-ps` / `remote-status` |
+| `shell` — debug (debian image) | `remote-bind` — approve a Telegram id |
+| `pull` — upstream base | `remote-ssh [CMD='…']` — run on server |
+
+---
+
+## Design & efficiency notes
+
+- **Thin image.** Multi-stage build fetches `gws` on Debian trixie (glibc match), then copies just the binary onto upstream distroless — no full OS in the runtime, ~19 MB over the base.
+- **No published ports.** Telegram polls outbound; the gateway binds `127.0.0.1` only.
+- **Bounded resources.** `mem_limit: 512m`, `cpus: 2.0`, tiny reservation.
+- **Runs as your user.** `ZEROCLAW_UID/GID` match the server login, so bind mounts and pairing state write cleanly (no `chown 65534` dance).
+- **Deny-by-default access.** Telegram `peer_groups.*.external_peers` gates who the agent answers; the dashboard is never exposed.
 
 ---
 
 ## Project layout
 
 ```
-docker_open_claw/
-├── docker-compose.yml
-├── Dockerfile                 # distroless + gws binary
-├── Makefile
-├── .env.example
-├── config/config.toml.example
-├── secrets/google/            # OAuth export (gitignored)
-├── scripts/sync-config.js
-├── scripts/remote.ps1
-├── scripts/remote.sh
-├── docs/telegram.md
-├── docs/whatsapp.md
-├── docs/google-workspace.md
-├── docs/deploy.md
-└── data/
+tim/
+├── docker-compose.yml         # the ZeroClaw service (no ports, 512M cap)
+├── Dockerfile                 # distroless + gws binary (multi-stage)
+├── Makefile                   # local + remote targets
+├── .env.example               # all knobs, documented
+├── config/
+│   └── config.toml.example    # schema-v3 template (Gemini, Telegram, Workspace)
+├── secrets/google/            # OAuth export for gws (gitignored)
+├── scripts/
+│   ├── sync-config.js         # .env → config/config.toml
+│   ├── remote.ps1             # Windows → Ubuntu deploy
+│   └── remote.sh              # Linux/WSL → Ubuntu deploy
+├── docs/
+│   ├── assets/banner.svg
+│   ├── telegram.md
+│   ├── deploy.md
+│   ├── google-workspace.md
+│   └── whatsapp.md
+└── data/                      # runtime memory/workspace (gitignored)
 ```
 
 ---
 
 ## Roadmap
 
-See [TODO.md](TODO.md). Workspace: [docs/google-workspace.md](docs/google-workspace.md).
+Still open: Google OAuth export polish, WhatsApp Web for a friend/group, a flight-search tool, pinning `ZEROCLAW_BASE` to a specific `v0.x.y` tag, and a `docker compose config` CI check.
 
 ---
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE). ZeroClaw itself is MIT OR Apache-2.0 ([upstream](https://github.com/zeroclaw-labs/zeroclaw)).
+Apache License 2.0 — see [LICENSE](LICENSE). ZeroClaw itself is MIT OR Apache-2.0 ([upstream](https://github.com/zeroclaw-labs/zeroclaw)). The banner in `docs/assets/` is original art for this repo.

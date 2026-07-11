@@ -40,25 +40,35 @@ case "$ACTION" in
     ;;
   sync)
     command -v node >/dev/null && node scripts/sync-config.js || true
-    remote "mkdir -p '$DEPLOY_PATH/data/data' '$DEPLOY_PATH/config' '$DEPLOY_PATH/scripts' '$DEPLOY_PATH/docs' '$DEPLOY_PATH/secrets/google'"
-    for f in docker-compose.yml Makefile .env .env.example Dockerfile \
-             config/config.toml.example config/config.toml scripts/sync-config.js \
-             docs/telegram.md docs/whatsapp.md docs/google-workspace.md docs/deploy.md README.md \
-             secrets/google/.gitkeep; do
+
+    # Single source of truth shared with remote.ps1 (see scripts/deploy-manifest.txt)
+    manifest="scripts/deploy-manifest.txt"
+    [[ -f "$manifest" ]] || { echo "Missing sync manifest: $manifest"; exit 1; }
+    files=()
+    while IFS= read -r line; do
+      files+=("$line")
+    done < <(grep -vE '^[[:space:]]*(#|$)' "$manifest" | sed -e 's/\r$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+    # Remote dirs = runtime data dir + every parent directory in the manifest
+    dirs=(data/data)
+    for f in "${files[@]}"; do
+      [[ "$f" == */* ]] && dirs+=("${f%/*}")
+    done
+    mkdir_args=""
+    while IFS= read -r d; do
+      mkdir_args+=" '$DEPLOY_PATH/$d'"
+    done < <(printf '%s\n' "${dirs[@]}" | sort -u)
+    remote "mkdir -p$mkdir_args"
+
+    for f in "${files[@]}"; do
       [[ -f "$f" ]] || continue
       echo "scp $f"
       scp "${SCP_OPTS[@]}" "$f" "$TARGET:$DEPLOY_PATH/$f"
     done
-    if [[ -f secrets/google/credentials.json ]]; then
-      echo "scp secrets/google/credentials.json"
-      scp "${SCP_OPTS[@]}" secrets/google/credentials.json "$TARGET:$DEPLOY_PATH/secrets/google/credentials.json"
-    else
+
+    [[ -f secrets/google/credentials.json ]] || \
       echo "No secrets/google/credentials.json yet (see docs/google-workspace.md)"
-    fi
-    if [[ -f secrets/google/client_secret.json ]]; then
-      echo "scp secrets/google/client_secret.json"
-      scp "${SCP_OPTS[@]}" secrets/google/client_secret.json "$TARGET:$DEPLOY_PATH/secrets/google/client_secret.json"
-    fi
+
     # Drop stale gws token cache so new refresh-token scopes take effect
     remote "rm -f '$DEPLOY_PATH/secrets/google/token_cache.json'; rm -rf '$DEPLOY_PATH/secrets/google/cache'"
     echo "Synced to $TARGET:$DEPLOY_PATH"
