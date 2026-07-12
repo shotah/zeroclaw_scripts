@@ -171,7 +171,9 @@ Everything lives in [`./docs`](docs). Start with Telegram, add the rest as neede
 | 🚀 **[docs/deploy.md](docs/deploy.md)** | Ubuntu server prep, UID/GID ownership, OpenSSH on Windows, the `make remote-*` workflow | Running on a real server |
 | 🗂️ **[docs/google-workspace.md](docs/google-workspace.md)** | Free Cloud project, OAuth scopes, `gws auth login/export`, UTF-8 credential export, smoke tests, troubleshooting | Gmail / Docs / Calendar / Drive access |
 | 🏃 **[docs/strava.md](docs/strava.md)** | Strava API app, `strava-mcp` OAuth, token mount, MCP wiring, Garmin auto-sync, coaching caveats | Workout summaries & training nudges |
-| 💬 **[docs/whatsapp.md](docs/whatsapp.md)** | WhatsApp Web vs Meta Cloud API, "Tim as his own number", peer/group allowlists, easier alternatives (Discord/Slack) | Reaching friends who don't use Telegram |
+| ⌚ **[docs/garmin.md](docs/garmin.md)** | **Proposal** — Garmin MCP vs Strava gaps (sleep, weight, climb grades), pre-built servers, effort | Decide whether to add Garmin Connect |
+| 💬 **[docs/whatsapp.md](docs/whatsapp.md)** | Web vs Cloud API (upstream selectors), `mode=personal`, peers/groups, when to skip WhatsApp | Reaching friends who don't use Telegram |
+| 📱 **[docs/sms.md](docs/sms.md)** | **Proposal** — Twilio / Telnyx vs Google Voice / RCS; why GWS ≠ SMS; webhook + 10DLC caveats | Plain SMS texting |
 
 Supporting files: [`SECURITY.md`](SECURITY.md) (hardening defaults & reporting).
 
@@ -181,14 +183,18 @@ flowchart LR
   R --> D[deploy.md]
   R --> G[google-workspace.md]
   R --> S[strava.md]
+  R --> Ga[garmin.md]
   R --> W[whatsapp.md]
+  R --> SMS[sms.md]
   T -. optional .-> W
+  W -. related .-> SMS
   D -. secrets sync .-> G
   D -. secrets sync .-> S
+  S -. proposal .-> Ga
   classDef core fill:#1f6feb22,stroke:#1f6feb,color:#79c0ff;
   classDef opt fill:#6e768122,stroke:#6e7681,color:#8b949e;
   class T,D core;
-  class G,S,W opt;
+  class G,S,Ga,W,SMS opt;
 ```
 
 ---
@@ -293,6 +299,8 @@ tim/
 │   ├── deploy.md
 │   ├── google-workspace.md
 │   ├── strava.md
+│   ├── garmin.md              # proposal: Garmin MCP (not implemented)
+│   ├── sms.md                 # proposal: SMS / Twilio vs Google (not implemented)
 │   └── whatsapp.md
 └── data/                      # runtime memory/workspace (gitignored)
 ```

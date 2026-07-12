@@ -1,112 +1,223 @@
 # WhatsApp setup (ZeroClaw)
 
-Telegram stays the default channel in this repo. WhatsApp is **optional** when you
-want to chat with people who only use WhatsApp (DM a friend, or a small group).
+Telegram stays the default channel. WhatsApp is **optional** when friends only
+live on WhatsApp (DM or a small group).
 
-ZeroClaw supports two backends. For “Tim is his own contact + friends on
-WhatsApp,” prefer **WhatsApp Web on a dedicated number**. **Cloud API** is Meta’s
-Business Platform (webhook, verification) — usually overkill here.
+Upstream:
+[ZeroClaw WhatsApp channel](https://github.com/zeroclaw-labs/zeroclaw/blob/master/docs/book/src/channels/whatsapp.md)
+· [channels overview](https://github.com/zeroclaw-labs/zeroclaw/blob/master/docs/book/src/channels/overview.md).
 
-Upstream: [channels reference](https://github.com/zeroclaw-labs/zeroclaw/blob/master/docs/reference/api/channels-reference.md).
+ZeroClaw supports **two backends** under the same `channels.whatsapp.*` family.
+The mode is selected by which field you set — **do not set both** on one alias
+(if you do, Cloud API wins for backward compatibility):
 
----
-
-## Pick a path (Tim as his own user)
-
-You want Tim to be a **separate WhatsApp contact**, not replies that look like
-they came from your personal account. That means Tim needs **his own phone
-number** — WhatsApp identity is the number, period.
-
-| Path | Who Tim appears as | Allowlist friends? | Ports / Meta? | Effort |
-|---|---|---|---|---|
-| **A. WhatsApp Web + spare number** (recommended here) | Tim’s number (SIM / eSIM / old phone) | Yes (`peer_groups` + policies) | No inbound ports | Low — QR link that phone |
-| **B. Cloud API (“Meta Business”)** | Official WhatsApp Business number | Yes | **Yes** — HTTPS webhook/tunnel + Meta app | High — Business verification, billing, public URL |
-| ~~Link your personal WhatsApp~~ | **You** (Tim types as Chris) | Yes | No | Easy, but wrong for your goal |
-
-### What is “Meta Business”?
-
-It’s Meta’s **official WhatsApp Business Platform** (Cloud API):
-
-1. Create a Meta Developer app and add the WhatsApp product  
-2. Usually attach a **Business Portfolio** / WhatsApp Business Account  
-3. Get an API token + phone number id (often a rented/cloud number)  
-4. Meta sends inbound messages to your **public HTTPS webhook**  
-
-That last part fights this stack’s “no published ports” design (you’d need
-Cloudflare Tunnel / ngroup / Tailscale Funnel, etc.). It’s meant for companies
-running customer support inboxes, not a home assistant.
-
-### Recommendation for you
-
-Use **path A**: put WhatsApp on a **dedicated number** (cheap prepaid SIM, eSIM,
-or an old Android just for Tim). Link that device via WhatsApp Web to ZeroClaw.
-Friends add **Tim’s number**; only numbers you put in
-`peer_groups.whatsapp_default.external_peers` can talk to him. You still chat
-from your own WhatsApp like any other contact.
-
-Skip Cloud API unless you later want a verified business brand and are OK
-exposing a webhook.
-
-### No spare phone? Easier alternatives than WhatsApp
-
-WhatsApp **rejects most Twilio / Google Voice / “SMS API” numbers** for signup
-(VoIP). Paying ~$5/mo for a programmable SMS number usually does **not** get
-you a WhatsApp identity. SMS group chat via Twilio is also a weak fit (10DLC
-registration in the US, awkward “groups,” Tim isn’t a normal contact).
-
-| Option | Tim’s identity | Friend friction | Fits this stack? |
+| Mode | Use when | Required selector | Public HTTPS? |
 |---|---|---|---|
-| **Discord bot** | Separate bot user (@Tim) | Low if friends already use Discord; free server + invite | **Best next step** — ZeroClaw has Discord; allowlist user IDs; groups/channels |
-| **Slack** (free workspace) | Bot/app in the workspace | OK for a small crew; invite-only | Good — similar to Discord |
-| **Stay on Telegram** | Already works | High if nobody uses it | Already done |
-| **Signal** | Needs a real mobile number too | Privacy-friendly but same SIM problem | Possible, same number hassle |
-| **Twilio SMS** | A phone number that texts | Friends text a number; no rich groups | Possible but clunky + compliance; not WhatsApp |
-| **WhatsApp** | Needs **real mobile** SIM/eSIM (not VoIP) | Friends already there | Hardest without a second line |
-
-**Practical pick:** Discord (or Slack) for Tim-as-bot + allowlisted friends.
-If WhatsApp is non-negotiable, cheapest reliable path is a **prepaid physical
-SIM or carrier eSIM** (~$5–15/mo) on your **current** phone via WhatsApp’s
-multi-account / dual-SIM — not a Twilio number.
+| **WhatsApp Web** | Link a normal WhatsApp account (QR / pair code) | `session_path` | **No** |
+| **WhatsApp Cloud API** | Meta Business app + Business phone number | `phone_number_id` (+ tokens) | **Yes** (webhook / tunnel) |
 
 ---
 
-## Friend + group recipe (Web mode)
+## Pick for Tim (decision)
 
-Goal: you and a friend can DM Tim, and optionally share a WhatsApp group where
-Tim only answers when @mentioned.
+Goal: Tim is a **separate WhatsApp contact**, not “Chris’s phone typing.”
+WhatsApp identity **is** the phone number.
 
-### 1. Persist a session path
+| Path | Who Tim appears as | Fits this stack? | Pick? |
+|---|---|---|---|
+| **A. Web + dedicated number** | Tim’s SIM / eSIM / old phone | ✅ no inbound ports; peer allowlist | **Yes — recommended** |
+| **B. Cloud API (Meta Business)** | Official WA Business number | ❌ needs public webhook + Meta app | Only if you want a verified business brand |
+| ~~Link your personal WhatsApp~~ | **You** (Tim speaks as Chris) | Easy, wrong identity | No |
 
-Session must survive restarts. Under this repo’s mounts, use something under
-`config/` or `data/` (both already on the server):
+### Recommendation
+
+**Path A (Web mode + `mode = "personal"`).** Put WhatsApp on a spare **carrier**
+line (see [Getting a real number](#getting-a-real-number-for-tim) below). Link
+that device once; friends add **Tim’s number**. Gate senders with
+`peer_groups` + `dm_policy` / `group_policy` allowlists.
+
+Skip Cloud API unless you accept tunnels and Meta Business setup. Same “no
+ports” fight as [SMS](sms.md).
+
+---
+
+## Getting a real number for Tim
+
+WhatsApp needs a **mobile-network number that can receive SMS** for the one-time
+verification code. That is what “real SIM” means here — not “plastic card,” not
+“Google Voice,” not “Twilio long code.”
+
+| Works for WhatsApp signup | Usually fails |
+|---|---|
+| Carrier prepaid / postpaid (T-Mobile, AT&T, Verizon, Fi, Mint, …) | Google Voice, TextNow, Skype |
+| Carrier **eSIM** with calls + SMS | Twilio / Telnyx / most “API SMS” numbers |
+| Physical nano-SIM from a real MVNO | Data-only travel eSIMs (no SMS inbox) |
+
+After signup, WhatsApp itself runs over **data / Wi‑Fi**. The line mainly has to
+(1) receive the verify SMS once, and (2) stay active enough that Meta doesn’t
+kill the account. For Tim + ZeroClaw Web mode you then **link that WhatsApp as
+a linked device** to the server (QR) — the phone can sit on Wi‑Fi afterward.
+
+### Proposed setups (cheapest → nicest)
+
+#### 1. Cheap prepaid physical SIM on an old phone (best default)
+
+Buy a **prepaid SIM** (Mint, Ultra Mobile, Tello, Visible, Walmart / grocery
+MVNOs, etc.) on the **lowest talk/text plan** (~$5–15/mo, sometimes less). Put
+it in a spare Android (drawer phone is fine).
+
+1. Activate SIM → receive WhatsApp SMS on that number.
+2. Install WhatsApp on that phone as **Tim**.
+3. On the server: enable Web mode → scan QR from that phone
+   (**Linked devices**).
+4. Leave the old phone plugged in on Wi‑Fi so the session stays healthy
+   (optional but reduces random logouts).
+
+No dual-SIM juggling on your daily driver. Number is clearly “Tim’s.”
+
+#### 2. Second line on **your** phone (eSIM + dual WhatsApp)
+
+If your phone supports **dual SIM** (Pixel / modern Samsung / recent iPhone):
+
+1. Add a second **carrier** eSIM or nano-SIM (same prepaid options as above).
+2. Keep **your** number on personal WhatsApp.
+3. Put Tim’s number on a second WhatsApp surface:
+   - **Android:** WhatsApp → Settings → profile dropdown → **Add account**, or
+     use **WhatsApp Business** with “use a different number.”
+   - **iPhone:** personal WhatsApp + **WhatsApp Business** (two apps).
+4. Link **Tim’s** account (not yours) to ZeroClaw via QR.
+
+Set default calls/SMS/data so Tim’s line isn’t burning your primary plan.
+
+#### 3. Google Fi group line — yes, but it’s a full line
+
+If you’re already on Fi: **adding a group member is a real cellular line**
+(eSIM or SIM), with SMS — WhatsApp should accept it. It is **not** “order a
+free extra number on my existing Fi SIM,” and it is **not** Google Voice.
+
+Rough shape ([Fi plans](https://support.google.com/fi/answer/9462098),
+[add a person](https://support.google.com/fi/answer/7131470)):
+
+- Flexible: ~$15–20/mo per extra line for unlimited call/text, **plus shared
+  data at $10/GB**.
+- Unlimited tiers: often **+$25–40/mo** for the second line depending on plan.
+
+**Do this if** you want one bill, easy eSIM on a Pixel, and don’t mind paying
+Fi group pricing. **Skip if** Tim only needs a verify SMS + occasional keep-
+alive — a $5–10 prepaid plan is usually enough.
+
+**Do not** use Google Voice / Fi “number forwarding tricks” as the WhatsApp
+identity — Voice is VoIP-class and WhatsApp routinely blocks it.
+
+#### 4. What *not* to do
+
+| Idea | Why it fails |
+|---|---|
+| Twilio / Telnyx “SMS API” number | WhatsApp treats most as VoIP; signup fails |
+| Google Voice | Same |
+| Data-only travel eSIM | No SMS OTP inbox |
+| Port your personal number to Tim | You lose that number as *your* WhatsApp |
+
+### Suggested pick for you
+
+| If… | Do this |
+|---|---|
+| You have an old Android in a drawer | **Prepaid SIM (~$5–15/mo)** → Tim’s WhatsApp → QR to ZeroClaw |
+| No spare phone, dual-SIM phone | **Cheap carrier eSIM** + WhatsApp multi-account / Business |
+| Already on Fi and want one bill / Pixel eSIM | **Add a Fi group line** for Tim (~$15+/mo) — works, just pricey vs prepaid |
+| Friends will use Discord instead | Skip WhatsApp entirely |
+
+Then continue with the [Web mode recipe](#friend--group-recipe-web-mode--recommended) below.
+
+### Still don’t want another line?
+
+| Option | Tim’s identity | Friend friction | Fits stack? |
+|---|---|---|---|
+| **Discord bot** | @Tim | Low if friends already there | ✅ Best next step |
+| **Slack** | Bot in a workspace | Invite-only crew | ✅ |
+| **Stay on Telegram** | Already works | High if nobody uses it | ✅ Done |
+| **SMS (Twilio / Telnyx)** | Rented number | Universal, clunky | ❌ webhook + 10DLC — [sms.md](sms.md) |
+
+---
+
+## How the two modes work (upstream)
+
+### Web mode
+
+- No Meta Business account.
+- Needs a ZeroClaw build with the **`whatsapp-web`** feature and a **persistent**
+  `session_path` (deleting it forces a fresh device link).
+- First start: **QR** (default) or **pair-code** linking (`pair_phone` seeds
+  pair-code; leave unset for QR).
+- Bind the channel on the agent: `agents.main.channels` must include
+  `"whatsapp.default"` (or your alias).
+- Optional: `interrupt_on_new_message = true` cancels an in-flight reply when
+  the same sender sends again (also applies to Cloud API).
+
+### Cloud API mode
+
+- Meta Business account, WhatsApp product, **phone number ID**, access token,
+  verify token (and preferably `app_secret` for signature checks).
+- Meta POSTs inbound traffic to your gateway. Configure ZeroClaw’s top-level
+  `[tunnel]` (or your own reverse proxy).
+- Callback URL is **per alias**:  
+  `GET`/`POST https://<public-host>/whatsapp/<alias>`  
+  e.g. `[channels.whatsapp.default]` → `/whatsapp/default`.  
+  Bare `/whatsapp` still works but is **deprecated** (first alias
+  lexicographically; sets `X-Zeroclaw-Deprecation`).
+
+---
+
+## Friend + group recipe (Web mode — recommended)
+
+### 1. Channel config (`mode = "personal"`)
+
+Upstream default is `mode = "business"`, which **does not** apply the personal
+DM/group policy split. For a peer-gated home assistant, use **`personal`**:
 
 ```toml
 [channels.whatsapp.default]
 enabled = true
 session_path = "/zeroclaw-data/.zeroclaw/state/whatsapp-web/session.db"
-# Optional: E.164 without spaces — seeds link / identity
+# Optional: E.164 — seeds pair-code linking; omit for QR
 # pair_phone = "15551234567"
 
-# Personal phone behavior (friend / group friendly)
 mode = "personal"
-dm_policy = "allowlist"
-group_policy = "allowlist"
-mention_only = true          # in groups: only reply when @mentioned
+dm_policy = "allowlist"       # allowlist | ignore | all
+group_policy = "allowlist"    # allowlist | ignore | all
+mention_only = true           # groups: only reply when @mentioned
 self_chat_mode = false
+# interrupt_on_new_message = true
 
-# Optional: lock to one group once you know its JID (see below)
-# allowed_groups = ["1203630xxxxxxxxx@g.us"]
+# Optional: hear group chatter without spending tokens until @mentioned
+# passive_group_context = true
+
+# Optional: lock to specific groups by JID (DMs always bypass this)
+# allowed_groups = ["120363012345678901@g.us", "120363098765432109"]
 ```
 
-Create the directory once on the server (owned by your deploy user):
+| Field | Effect (Web + `personal`) |
+|---|---|
+| `dm_policy` | Who may DM |
+| `group_policy` | Whether groups are considered at all |
+| `mention_only` | In groups, require @mention to start a turn |
+| `self_chat_mode` | Allow/deny messaging yourself |
+| `passive_group_context` | Store allowed unaddressed group lines as context **without** calling the model |
+| `allowed_groups` | Drop groups whose JID isn’t listed (exact full JID or exact user part before `@`) |
+
+Empty `allowed_groups` = all groups (still subject to policies / peers).
+**DMs always bypass `allowed_groups`.**
+
+Create the session dir once (deploy user ownership):
 
 ```bash
 make remote-ssh CMD='mkdir -p config/state/whatsapp-web'
 ```
 
-### 2. Allow Tim’s agent on WhatsApp + peer allowlist
+(`config/` mounts to `/zeroclaw-data/.zeroclaw` — adjust if you put the DB under
+`data/` instead.)
 
-Schema v3 auth is **peer groups**, same idea as Telegram.
+### 2. Agent + peer allowlist (schema v3)
 
 ```toml
 [agents.main]
@@ -115,102 +226,92 @@ channels = ["telegram.default", "whatsapp.default"]
 [peer_groups.whatsapp_default]
 channel = "whatsapp.default"
 agents = ["main"]
-# Your number + friend’s number (E.164). Example placeholders only:
+# Your number + friend’s number (E.164)
 external_peers = ["+15551110001", "+15551110002"]
 ```
 
-Keep Telegram’s peer group as-is so both channels work.
+Keep Telegram’s peer group so both channels work.
 
-### 3. Link the device (QR)
-
-Redeploy so config is on the server, then watch logs and scan QR from the
-phone that owns Tim’s number:
+### 3. Link the device
 
 ```bash
 make remote-deploy
 make remote-logs
 ```
 
-On the phone: **WhatsApp → Settings → Linked devices → Link a device**, scan
-the QR from the logs (or follow any pair-code prompt ZeroClaw prints).
+On Tim’s phone: **WhatsApp → Linked devices → Link a device**, scan the QR
+(or enter the pair code). Session lives at `session_path` — don’t delete it.
 
-Session is stored at `session_path`. Don’t delete that file or you’ll relink.
+Then smoke-check (inside the container / via remote SSH):
 
-> **Image note:** WhatsApp Web needs the `whatsapp-web` / wa-rs build in the
-> binary. If logs say Web mode isn’t available after setting `session_path`,
-> check your `ZEROCLAW_BASE` image release notes or open an issue upstream —
-> Cloud API may still work but needs a tunnel (next section).
+```bash
+zeroclaw channel doctor
+# if needed:
+zeroclaw channel start
+```
 
-### 4. DM your friend
+> **Image note:** Web mode needs `whatsapp-web` in the binary. If logs say Web
+> isn’t available with `session_path` set, check `ZEROCLAW_BASE` release notes
+> or upstream — Cloud API may still work but needs a tunnel.
 
-1. Friend messages Tim’s WhatsApp number (or you message from an allowlisted phone).
-2. Sender must be in `peer_groups.whatsapp_default.external_peers`.
-3. If Tim ignores them, add their E.164 and `make remote-deploy` (or set via
-   `zeroclaw config set` on the server), then retry.
+### 4. DM / group
 
-### 5. Group with your friend
-
-1. Create a WhatsApp group: you + friend + Tim’s number (the linked phone).
-2. Send a message in the group; with `mention_only = true`, Tim stays quiet
-   until someone @mentions the linked contact.
-3. To restrict Tim to **only that group**, grab the group JID from logs (look
-   for `@g.us`) and set:
-
-   ```toml
-   allowed_groups = ["1203630xxxxxxxxx@g.us"]
-   ```
-
-   Empty `allowed_groups` = all groups allowed (still subject to
-   `group_policy` / `mention_only` / peer allowlist).
+1. Friend texts **Tim’s** number; their E.164 must be in `external_peers`.
+2. Group: you + friend + Tim’s number. With `mention_only = true`, Tim stays
+   quiet until @mentioned.
+3. Optional: set `allowed_groups` to that group’s `@g.us` JID from logs.
+4. Optional: `passive_group_context = true` so Tim can use prior group chatter
+   as context when finally @mentioned (no model calls on every line).
 
 ---
 
 ## Cloud API (optional / heavier)
 
-Only if you want Meta’s official Business API:
+Only if you want Meta’s official Business Platform:
 
-1. Meta Developer app → WhatsApp product → permanent token + phone number id.
-2. Set on the channel (no `session_path`):
+```toml
+[channels.whatsapp.default]
+enabled = true
+# Do NOT also set session_path on this alias
+access_token = "EAAB..."
+phone_number_id = "123456789012345"
+verify_token = "pick-a-long-random-string"
+# app_secret = "..."   # recommended
+```
 
-   ```toml
-   [channels.whatsapp.default]
-   enabled = true
-   access_token = "EAAB..."
-   phone_number_id = "123456789012345"
-   verify_token = "pick-a-long-random-string"
-   # app_secret = "..."   # recommended for signature checks
-   ```
+1. Meta Developer app → WhatsApp → permanent token + phone number id.
+2. Expose the gateway (ZeroClaw `[tunnel]` or your own proxy).
+3. Meta Callback URL: `https://<public-host>/whatsapp/default` (match your
+   alias), same `verify_token`, subscribe to `messages`.
 
-3. Publish the gateway with TLS (this breaks the “no ports” lean default), e.g.
-   tunnel to `/whatsapp`, and point Meta’s webhook at it with the same
-   `verify_token`.
-
-Prefer Web mode for a home server + friends.
+This breaks the lean “no published ports” default. Prefer Web mode for friends
+on a home server.
 
 ---
 
 ## Config checklist
 
-Add to `config/config.toml` (example is Telegram-only by default — WhatsApp is
-opt-in so we don’t surprise-link a phone):
+WhatsApp is **opt-in** (example config is Telegram-only):
 
-1. `[channels.whatsapp.default]` — Web `session_path` + policies above  
-2. `[peer_groups.whatsapp_default]` — `agents = ["main"]` + friend numbers  
-3. `[agents.main].channels` — include `"whatsapp.default"`  
-4. `make remote-deploy` → link device → test DM → then group  
+1. `[channels.whatsapp.default]` — **either** `session_path` (Web) **or**
+   `phone_number_id` (Cloud), not both  
+2. Web: `mode = "personal"` + allowlist policies  
+3. `[peer_groups.whatsapp_default]` — `agents = ["main"]` + E.164 peers  
+4. `[agents.main].channels` — include `"whatsapp.default"`  
+5. `make remote-deploy` → link device → `channel doctor` → DM → group  
 
-`.env` does **not** sync WhatsApp yet (Telegram peers only). Edit `config.toml`
-(or use `zeroclaw config set` over `make remote-ssh`).
+`.env` does **not** sync WhatsApp peers yet (Telegram only). Edit
+`config/config.toml` or `zeroclaw config set` over SSH.
 
 ---
 
 ## Security
 
-- Keep `external_peers` tight — WhatsApp numbers are easy to spam if open.
-- Prefer `mention_only = true` in groups so Tim doesn’t reply to every chat line.
-- Prefer a **dedicated number** for Tim so your personal chats stay private.
-- Session DB is credentials — stays under gitignored `config/` / `data/`.
-- Cloud API tokens belong in env / secrets, never committed.
+- Keep `external_peers` tight — open WhatsApp is easy to spam.
+- Prefer `mention_only = true` in groups.
+- Prefer a **dedicated number** so personal chats stay off Tim’s session.
+- Session DB is credentials — under gitignored `config/` / `data/`.
+- Cloud API tokens: env / secrets only, never commit.
 
 ---
 
@@ -218,10 +319,13 @@ opt-in so we don’t surprise-link a phone):
 
 | Symptom | Likely fix |
 |---|---|
-| No QR / “web mode unavailable” | Image may lack WhatsApp Web; confirm `session_path` set and image features |
-| Friend ignored | Add their E.164 to `peer_groups.whatsapp_default.external_peers`; ensure `agents = ["main"]` |
-| Group ignored | `group_policy`, `mention_only`, or `allowed_groups` mismatch; @mention Tim |
+| No QR / “web mode unavailable” | Image lacks `whatsapp-web`; confirm `session_path` and `ZEROCLAW_BASE` features |
+| Friend ignored | Add E.164 to `peer_groups.whatsapp_default.external_peers`; `agents = ["main"]` |
+| Policies ignored | Need `mode = "personal"` (default `business` skips DM/group policy split) |
+| Group ignored | `group_policy`, `mention_only`, or `allowed_groups` (exact JID / user part) |
 | Relink every restart | `session_path` not on a persistent volume |
-| Cloud webhook 403 / no messages | Tunnel URL, `verify_token`, subscribe to `messages` |
+| Both modes weird | Don’t set `session_path` and `phone_number_id` on the same alias |
+| Cloud webhook 403 / silence | Tunnel URL `/whatsapp/<alias>`, `verify_token`, `messages` subscription |
 
-Telegram guide: [docs/telegram.md](telegram.md). Deploy: [docs/deploy.md](deploy.md).
+Telegram: [docs/telegram.md](telegram.md). SMS alternatives: [docs/sms.md](sms.md).
+Deploy: [docs/deploy.md](deploy.md).

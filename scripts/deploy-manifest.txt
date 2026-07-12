@@ -16,6 +16,8 @@ docs/telegram.md
 docs/whatsapp.md
 docs/google-workspace.md
 docs/strava.md
+docs/garmin.md
+docs/sms.md
 docs/deploy.md
 README.md
 secrets/google/.gitkeep
