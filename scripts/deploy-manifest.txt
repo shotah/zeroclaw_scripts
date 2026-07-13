@@ -17,6 +17,7 @@ docs/whatsapp.md
 docs/google-workspace.md
 docs/strava.md
 docs/garmin.md
+docs/web-search.md
 docs/sms.md
 docs/deploy.md
 README.md

@@ -20,6 +20,9 @@ secrets/garmin/*
 !secrets/garmin/.gitkeep
 !secrets/garmin/.gitignore
 
+# Scratch HOME used for local garmin CLI smoke tests (never commit)
+secrets/garmin_home_tmp/
+
 # Generated config + ZeroClaw pairing/agent state (synced / runtime)
 config/*
 !config/config.toml.example

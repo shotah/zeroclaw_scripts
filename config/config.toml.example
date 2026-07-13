@@ -18,7 +18,7 @@ risk_profile = "default"
 channels = ["telegram.default"]
 # Grant MCP servers to this agent. ZeroClaw is secure-by-default: servers in
 # [mcp] are registered but only reach an agent via a bundle (see [mcp_bundles]).
-mcp_bundles = ["strava", "garmin"]
+mcp_bundles = ["strava", "garmin", "google-search"]
 
 [channels.telegram.default]
 enabled = true
@@ -49,6 +49,7 @@ audit_log = true
 
 # Strava workout data via the strava-mcp MCP server (docs/strava.md).
 # Garmin Connect (sleep / weight / readiness) via go-garmin (docs/garmin.md).
+# Google Search via Gemini grounding (docs/web-search.md) — same GEMINI_API_KEY.
 # ZeroClaw launches each binary over stdio. Strava creds come from the container
 # env; Garmin uses secrets/garmin/session.json on the mount (HOME=/zeroclaw-data).
 [mcp]
@@ -70,6 +71,11 @@ transport = "stdio"
 command = "garmin"
 args = ["mcp"]
 
+[[mcp.servers]]
+name = "google-search"
+transport = "stdio"
+command = "mcp-gemini-google-search"
+
 # Bundle that grants the "strava" MCP server. Referenced by agents.main.mcp_bundles.
 # Without this grant the agent sees zero Strava tools and improvises (e.g. Gmail).
 [mcp_bundles.strava]
@@ -77,6 +83,14 @@ servers = ["strava"]
 
 [mcp_bundles.garmin]
 servers = ["garmin"]
+
+[mcp_bundles.google-search]
+servers = ["google-search"]
+
+# Built-in ZeroClaw web_search defaults to DuckDuckGo scraping, which Docker IPs
+# get blocked for. Prefer the google-search MCP (Gemini grounding) above.
+[web_search]
+enabled = false
 
 # Web access for Tim's `web_fetch` tool. Matching is by domain (exact or
 # subdomain) — no scheme, no path. `blocked_domains` ALWAYS wins over allowed.

@@ -2,16 +2,17 @@
 
 Give Tim your Garmin-native recovery data — sleep, Index scale weigh-ins, Body
 Battery / HRV, training readiness — via the
-[go-garmin](https://github.com/llehouerou/go-garmin) CLI’s built-in MCP server
+[go-garmin](https://github.com/shotah/go-garmin) CLI’s built-in MCP server
 (`garmin mcp`). A static Go binary is baked into the image (like `gws` /
 `strava-mcp`); ZeroClaw launches it over stdio.
 
 **Keep Strava** for the activity feed if you want; Garmin fills the gaps Strava
-never had. Climbing typed-splits (per-route grades / attempts) are a follow-up
-PR against go-garmin — not required for sleep/weight.
+never had. Climbing grades / falls / sends come from typed splits + split
+summaries (already in go-garmin MCP).
 
-Upstream: [go-garmin](https://github.com/llehouerou/go-garmin) · compare with
-[docs/strava.md](strava.md).
+Build source: [shotah/go-garmin](https://github.com/shotah/go-garmin) (DI auth
+fork of [llehouerou/go-garmin](https://github.com/llehouerou/go-garmin)) · see
+also [docs/strava.md](strava.md).
 
 ```mermaid
 flowchart LR
@@ -57,7 +58,7 @@ Curated tools are auto-approved in `config/config.toml.example` (prefixed
 `.env.example`):
 
 ```env
-# GARMIN_MCP_REF=cbf5895e08bf32ea5510aabfd392c892055de2ab
+# GARMIN_MCP_REF=de40f7bfdc489e8b5ded3eb533586d7297513e95
 ```
 
 Leaving it unset uses the Dockerfile default commit.
@@ -146,7 +147,17 @@ docker compose run --rm --entrypoint garmin zeroclaw weight daily
 ```
 
 Then ask Tim over Telegram: “How did I sleep last night?” / “What’s my latest
-scale weight?”
+scale weight?” / “How was my last climbing session — grades and falls?”
+
+### Climbing API shape (what Tim should use)
+
+| Need | Tool | Fields |
+|---|---|---|
+| Session falls / sends / max grade | `list_activities` or `get_activity_split_summaries` | `numFalls`, `numClimbSends`, `numClimbsCompleted`, `maxClimbGrade` / `maxGradeValue` |
+| Per-route grades + completed vs attempted | `get_activity_typed_splits` | `type`=`CLIMB_ACTIVE`, `status`=`CLIMB_COMPLETED`\|`CLIMB_ATTEMPTED`, `gradeValue` (`VERMIN`/`YDS`/`FONT`) |
+
+Watch “falls” ≈ `numFalls` on the `CLIMB_ACTIVE` split summary (not a separate
+endpoint). Bouldering often shows attempts via `CLIMB_ATTEMPTED` status instead.
 
 ---
 
@@ -169,30 +180,18 @@ scale weight?”
 Error: failed to exchange for OAuth2 token: OAuth2 exchange failed: 401 Unauthorized
 ```
 
-that means SSO + MFA succeeded; go-garmin died on the **next** step
-(`POST …/oauth-service/oauth/exchange/user/2.0`). Browser login to
-connect.garmin.com working is expected and does **not** contradict this.
+that was the **pre-fix** go-garmin path (`…/oauth-service/oauth/exchange/user/2.0`).
+Tim now builds [shotah/go-garmin](https://github.com/shotah/go-garmin) with
+mobile SSO + **DI** tokens (`diauth…/di-oauth2-service/oauth/token`), same idea as
+`garminconnect` ≥ 0.3.
 
-**Cause:** Garmin tightened Connect SSO around **March 2026** (headers,
-Cloudflare / TLS fingerprinting, mobile `audience` on the OAuth2 exchange).
-[go-garmin](https://github.com/llehouerou/go-garmin) last shipped auth in
-**Feb 2026** and still uses the older exchange path — so many accounts get
-401/403 here even with correct credentials. The Python stack hit the same
-wall; `garminconnect` ≥ 0.3 rewrote auth (and even that is flaky for some).
+**If login still fails after rebuilding the image:**
 
-**Do this:**
-
-1. **Stop retrying login** for a bit — failed SSO attempts can trigger
-   account+client **429** blocks that last hours.
-2. Keep Strava wired for workouts in the meantime.
-3. Next engineering step (pick one):
-   - Patch / fork go-garmin to the current **mobile DI OAuth** flow (audience,
-     headers, embed cookie) — preferred long-term for this distroless image, or
-   - Spike `garminconnect` ≥ 0.3 once (Python) only to prove *your* account
-     still logs in with a modern client, then decide whether to port that flow
-     into Go.
-
-This is an upstream Garmin/auth-client mismatch, not a Tim compose misconfig.
+1. **Stop retrying** for a bit — failed SSO can trigger account+client **429**
+   blocks that last hours.
+2. Cloudflare may still block plain Go TLS (Python uses `curl_cffi`). Note the
+   exact status (403/429/other) before another attempt.
+3. Keep Strava for workouts until auth sticks once (`session.json` then refreshes).
 
 ---
 
@@ -211,7 +210,7 @@ This is an upstream Garmin/auth-client mismatch, not a Tim compose misconfig.
 
 ## Follow-ups
 
-- [ ] Climbing typed-splits PR on go-garmin (per-route grades / attempts)
+- [x] Climbing typed-splits / grades / falls (go-garmin MCP)
 - [ ] Decide whether to drop Strava once Garmin activity coverage feels enough
 - [ ] Expand `auto_approve` if you want workouts / biometric tools
 

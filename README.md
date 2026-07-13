@@ -221,6 +221,7 @@ Set in `.env` (copy from [`.env.example`](.env.example)). Secrets are never comm
 | `GWS_VERSION` | — | Override the `gws` release tag (default pinned in the `Dockerfile`) |
 | `STRAVA_MCP_VERSION` | — | Override the `strava-mcp` release tag (default pinned in the `Dockerfile`) |
 | `GARMIN_MCP_REF` | — | Optional go-garmin git commit pin (default in `Dockerfile`) |
+| `GEMINI_SEARCH_MCP_REF` | — | Optional zchee Google Search MCP git pin (default in `Dockerfile`) |
 | `ZEROCLAW_UID` / `ZEROCLAW_GID` | server | Match the server login user (`id -u` / `id -g`) |
 | `DEPLOY_HOST` | remote | Server hostname / IP |
 | `DEPLOY_USER` | remote | SSH user (default `ubuntu`) |
@@ -255,7 +256,7 @@ Full guide: **[docs/strava.md](docs/strava.md)**.
 
 ## Garmin recovery (sleep / weight)
 
-Tim can read Garmin Connect for sleep, Index scale weight, Body Battery / HRV, and training readiness via [go-garmin](https://github.com/llehouerou/go-garmin) (`garmin mcp`) — a static Go binary baked into the image. Optional. No API app; one interactive login writes `secrets/garmin/session.json`.
+Tim can read Garmin Connect for sleep, Index scale weight, Body Battery / HRV, and training readiness via [shotah/go-garmin](https://github.com/shotah/go-garmin) (`garmin mcp`) — a static Go binary baked into the image. Optional. No API app; one interactive login writes `secrets/garmin/session.json`.
 
 ```bash
 make garmin-auth          # interactive email / password / MFA → secrets/garmin/session.json
@@ -265,6 +266,23 @@ make sync-config && make build && make up   # or: make remote-deploy
 Ask Tim: “How did I sleep last night?” / “What’s my weight trend?”
 
 Full guide: **[docs/garmin.md](docs/garmin.md)**.
+
+---
+
+## Web search (Google via Gemini)
+
+DuckDuckGo (ZeroClaw’s built-in `web_search`) gets blocked from Docker. Tim uses
+[zchee/mcp-gemini-google-search](https://github.com/zchee/mcp-gemini-google-search)
+instead — same `GEMINI_API_KEY`, tool `google_search`. Built-in `web_search` is
+disabled.
+
+```bash
+make build && make up   # or: make remote-deploy
+```
+
+Ask Tim: “Search the web for …”
+
+Full guide: **[docs/web-search.md](docs/web-search.md)**.
 
 ---
 

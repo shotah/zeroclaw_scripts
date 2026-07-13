@@ -1,6 +1,6 @@
 # Lean ZeroClaw stack — Gemini + Telegram, no host ports (Telegram polls).
-# Image: distroless upstream + gws + strava-mcp + garmin binaries (see Dockerfile).
-# Docs: docs/telegram.md, docs/google-workspace.md, docs/strava.md, docs/garmin.md
+# Image: distroless upstream + gws + strava-mcp + garmin + gemini-search (see Dockerfile).
+# Docs: docs/telegram.md, docs/google-workspace.md, docs/strava.md, docs/garmin.md, docs/web-search.md
 
 services:
   zeroclaw:
@@ -14,6 +14,7 @@ services:
         - GWS_VERSION
         - STRAVA_MCP_VERSION
         - GARMIN_MCP_REF
+        - GEMINI_SEARCH_MCP_REF
     image: ${ZEROCLAW_IMAGE:-zeroclaw-gws:local}
     container_name: zeroclaw
     restart: unless-stopped
@@ -38,6 +39,9 @@ services:
       ZEROCLAW_gateway__host: "127.0.0.1"
       ZEROCLAW_gateway__port: "42617"
       ZEROCLAW_gateway__allow_public_bind: "false"
+      # Gemini Google Search MCP (zchee) inherits these — same key as chat.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
       # gws in Docker: file keyring + exported OAuth creds (see docs/google-workspace.md)
       GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND: file
       GOOGLE_WORKSPACE_CLI_CONFIG_DIR: /zeroclaw-data/.config/gws
