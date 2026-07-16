@@ -47,7 +47,9 @@ TELEGRAM_ALLOWED_USERS=123456789
 Multiple users: comma-separated IDs — `111,222,333`.
 
 `make sync-config` writes those IDs into ZeroClaw schema v3
-`[peer_groups.telegram_default].external_peers` (with `agents = ["main"]`).
+`[peer_groups.telegram_default].external_peers` (with `agents = ["main"]`)
+and injects `TELEGRAM_BOT_TOKEN` into `[channels.telegram.default].bot_token`
+(required by current ZeroClaw — env-only is not enough).
 
 Then:
 

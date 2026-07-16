@@ -29,7 +29,9 @@ sudo chown "$USER:$USER" /zeroclaw
 
 Set `ZEROCLAW_UID` / `ZEROCLAW_GID` in `.env` to your server user (`id -u` / `id -g`, usually `1000`). The container runs as that user so pairing and `data/` writes work without `chown 65534`.
 
-Ensure outbound HTTPS works (Telegram + Gemini). **No inbound ports** required for Telegram polling.
+Ensure outbound HTTPS works (Telegram + Gemini). Telegram polling needs **no inbound ports**.
+The gateway/dashboard is published on **`:42617`** (override with `GATEWAY_PORT`) for LAN access
+from your workstation — e.g. `http://<DEPLOY_HOST>:42617/`. Do not WAN-forward that port.
 
 ---
 

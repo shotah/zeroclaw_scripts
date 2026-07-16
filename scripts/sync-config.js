@@ -3,7 +3,9 @@
 
 /**
  * Sync .env → config/config.toml (deployable; owned by you).
- * Schema v3: TELEGRAM_ALLOWED_USERS → peer_groups.telegram_default.external_peers
+ * Schema v3:
+ *   TELEGRAM_ALLOWED_USERS → peer_groups.telegram_default.external_peers
+ *   TELEGRAM_BOT_TOKEN → channels.telegram.default.bot_token
  */
 
 const fs = require('fs');
@@ -61,6 +63,7 @@ function main() {
 
   const model = get('GEMINI_MODEL', 'gemini-3.5-flash');
   const peers = tomlStringArray(get('TELEGRAM_ALLOWED_USERS', ''));
+  const botToken = get('TELEGRAM_BOT_TOKEN', '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
   let toml = fs.readFileSync(examplePath, 'utf8');
 
@@ -74,6 +77,18 @@ function main() {
     `$1${peers}`
   );
 
+  // ZeroClaw now requires bot_token in-file; empty section fails and Telegram is disabled.
+  if (!/\[channels\.telegram\.default\][\s\S]*?\bbot_token\s*=/.test(toml)) {
+    toml = toml.replace(
+      /(\[channels\.telegram\.default\]\s*\n(?:enabled\s*=\s*[^\n]+\n)?)/,
+      `$1bot_token = ""\n`
+    );
+  }
+  toml = toml.replace(
+    /(\[channels\.telegram\.default\][\s\S]*?bot_token\s*=\s*")[^"]*(")/,
+    `$1${botToken}$2`
+  );
+
   fs.mkdirSync(outDir, { recursive: true });
   fs.mkdirSync(path.join(root, 'data', 'data'), { recursive: true });
   fs.writeFileSync(outPath, toml.endsWith('\n') ? toml : `${toml}\n`);
@@ -81,7 +96,10 @@ function main() {
   console.log(`Wrote ${outPath}`);
   console.log(`  providers.models.gemini.default.model = ${model}`);
   console.log(`  peer_groups.telegram_default.external_peers = ${peers}`);
-  console.log('  api_key / bot_token come from compose env overrides (.env)');
+  console.log(
+    `  channels.telegram.default.bot_token = ${botToken ? '(set from .env)' : '(empty — set TELEGRAM_BOT_TOKEN)'}`
+  );
+  console.log('  gemini api_key still comes from compose env override (.env)');
 }
 
 main();

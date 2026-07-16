@@ -102,7 +102,7 @@ make init          # copy .env.example → .env, make ./data, install config tem
 
 make sync-config   # write config/config.toml from .env
 make build         # thin image = distroless + gws
-make up            # start the daemon (no published ports)
+make up            # start the daemon (dashboard on :42617)
 make logs          # watch it connect, then message your bot
 ```
 
@@ -155,8 +155,9 @@ flowchart TD
 
 1. **`make init`** — seeds `.env`, `./data`, and `config/config.toml` from templates.
 2. **`make sync-config`** — [`scripts/sync-config.js`](scripts/sync-config.js) renders `config/config.toml`: Gemini model + the Telegram allowlist as schema-v3 `peer_groups`.
-3. **`make build` / `make up`** — builds the thin image (upstream distroless + `gws`) and runs the daemon. `GEMINI_API_KEY` and `TELEGRAM_BOT_TOKEN` are injected as env, never written to disk.
-4. The daemon **long-polls** Telegram; **no host ports are published**.
+3. **`make build` / `make up`** — builds the thin image (upstream distroless + `gws`) and runs the daemon. `GEMINI_API_KEY` stays env-only; `TELEGRAM_BOT_TOKEN` is also written into `config/config.toml` by `make sync-config` (required by current ZeroClaw).
+4. The daemon **long-polls** Telegram. The gateway/dashboard is published on
+   **`:42617`** for LAN access (keep it off the public internet).
 
 ```
 config/config.toml     # yours — synced/edited by the deploy user (gitignored)
@@ -174,7 +175,7 @@ Everything lives in [`./docs`](docs). Start with Telegram, add the rest as neede
 |---|---|---|
 | 📨 **[docs/telegram.md](docs/telegram.md)** | BotFather token, numeric user id, schema-v3 `peer_groups` allowlist, `make remote-bind` pairing, `/new` session reset, `telegram_lean` history bounds, long-term SQLite memory | **Always** — this is the default channel |
 | 🚀 **[docs/deploy.md](docs/deploy.md)** | Ubuntu server prep, UID/GID ownership, OpenSSH on Windows, the `make remote-*` workflow | Running on a real server |
-| 🗂️ **[docs/google-workspace.md](docs/google-workspace.md)** | Go MCP (`google-workspace-mcp-go`), OAuth import from gws export, Docs/Gmail/Calendar tools | Gmail / Docs / Calendar / Drive |
+| 🗂️ **[docs/google-workspace.md](docs/google-workspace.md)** | Go MCP (`google-workspace-mcp-go`), `make google-auth`, Docs/Gmail/Calendar tools | Gmail / Docs / Calendar / Drive |
 | 🏃 **[docs/strava.md](docs/strava.md)** | Strava API app, `strava-mcp` OAuth, token mount, MCP wiring | Workout summaries & training nudges |
 | ⌚ **[docs/garmin.md](docs/garmin.md)** | go-garmin MCP, `make garmin-auth`, sleep / weight / readiness | Physiological recovery + scale weight |
 | 💬 **[docs/whatsapp.md](docs/whatsapp.md)** | Web vs Cloud API (upstream selectors), `mode=personal`, peers/groups, when to skip WhatsApp | Reaching friends who don't use Telegram |
@@ -221,7 +222,7 @@ Set in `.env` (copy from [`.env.example`](.env.example)). Secrets are never comm
 | `ZEROCLAW_IMAGE` | — | Local tag after build (default `zeroclaw-gws:local`) |
 | `GWS_VERSION` | — | Override the `gws` release tag (default pinned in the `Dockerfile`) |
 | `STRAVA_MCP_VERSION` | — | Override the `strava-mcp` release tag (default pinned in the `Dockerfile`) |
-| `GARMIN_MCP_REF` | — | Optional go-garmin git commit pin (default in `Dockerfile`) |
+| `GARMIN_MCP_VERSION` | — | shotah/go-garmin release tag (default `v0.1.0`) |
 | `GEMINI_SEARCH_MCP_REF` | — | Optional zchee Google Search MCP git pin (default in `Dockerfile`) |
 | `ZEROCLAW_UID` / `ZEROCLAW_GID` | server | Match the server login user (`id -u` / `id -g`) |
 | `DEPLOY_HOST` | remote | Server hostname / IP |
@@ -308,11 +309,11 @@ make help            # full grouped list
 
 ## Design & efficiency notes
 
-- **Thin image.** Multi-stage build fetches `gws`, static `strava-mcp`, and builds static `garmin` (go-garmin), then copies just those onto upstream distroless — no full OS in the runtime.
-- **No published ports.** Telegram polls outbound; the gateway binds `127.0.0.1` only.
+- **Thin image.** Multi-stage build fetches `gws`, static `strava-mcp`, and `garmin` (go-garmin release), then copies those plus a static `/bin/sh` (busybox) onto upstream distroless — no full OS. (ZeroClaw now requires a shell on PATH at agent init; upstream `:debian` is bookworm and too old for `gws`.)
+- **Telegram needs no inbound ports.** It polls outbound; the gateway/dashboard is published on `:42617` for LAN use only.
 - **Bounded resources.** `mem_limit: 2g`, `cpus: 4.0`, `mem_reservation: 256m`.
 - **Runs as your user.** `ZEROCLAW_UID/GID` match the server login, so bind mounts and pairing state write cleanly (no `chown 65534` dance).
-- **Deny-by-default access.** Telegram `peer_groups.*.external_peers` gates who the agent answers; the dashboard is never exposed.
+- **Deny-by-default Telegram access.** `peer_groups.*.external_peers` gates who the agent answers. The dashboard/API is open on the LAN when published — do not WAN-forward `42617`.
 
 ---
 
@@ -320,7 +321,7 @@ make help            # full grouped list
 
 ```
 tim/
-├── docker-compose.yml         # the ZeroClaw service (no ports, 2G / 4 CPU)
+├── docker-compose.yml         # the ZeroClaw service (:42617 dashboard, 2G / 4 CPU)
 ├── Dockerfile                 # distroless + gws + strava-mcp + garmin (multi-stage)
 ├── Makefile                   # local + remote targets
 ├── .env.example               # all knobs, documented

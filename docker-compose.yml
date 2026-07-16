@@ -1,4 +1,5 @@
-# Lean ZeroClaw stack — Gemini + Telegram, no host ports (Telegram polls).
+# Lean ZeroClaw stack — Gemini + Telegram (Telegram polls outbound).
+# Gateway/dashboard published on 42617 for LAN access (keep off the public internet).
 # Image: distroless upstream + gws + google-workspace-mcp-go + strava + garmin + gemini-search.
 # Docs: docs/telegram.md, docs/google-workspace.md, docs/strava.md, docs/garmin.md, docs/web-search.md
 
@@ -13,7 +14,7 @@ services:
         - ZEROCLAW_BASE
         - GWS_VERSION
         - STRAVA_MCP_VERSION
-        - GARMIN_MCP_REF
+        - GARMIN_MCP_VERSION
         - GEMINI_SEARCH_MCP_REF
         - GOOGLE_WORKSPACE_MCP_REF
     image: ${ZEROCLAW_IMAGE:-zeroclaw-gws:local}
@@ -35,9 +36,9 @@ services:
       ZEROCLAW_providers__models__gemini__default__model: ${GEMINI_MODEL:-gemini-3.5-flash}
       ZEROCLAW_channels__telegram__default__bot_token: ${TELEGRAM_BOT_TOKEN:-}
       ZEROCLAW_channels__telegram__default__enabled: "true"
-      ZEROCLAW_gateway__host: "127.0.0.1"
+      ZEROCLAW_gateway__host: "0.0.0.0"
       ZEROCLAW_gateway__port: "42617"
-      ZEROCLAW_gateway__allow_public_bind: "false"
+      ZEROCLAW_gateway__allow_public_bind: "true"
       # Gemini Google Search MCP (zchee) inherits these — same key as chat.
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
@@ -57,6 +58,9 @@ services:
       STRAVA_CLIENT_SECRET: ${STRAVA_CLIENT_SECRET:-}
       STRAVA_TOKEN_PATH: /zeroclaw-data/.config/strava/tokens.json
       # Garmin MCP: no email/password env — session.json on the mount (docs/garmin.md).
+    ports:
+      # Web dashboard + REST/WS gateway — LAN only; do not port-forward from the WAN.
+      - "${GATEWAY_PORT:-42617}:42617"
     volumes:
       # Full .zeroclaw dir (config.toml + pairing/agent state) — owned by deploy user
       - ./config:/zeroclaw-data/.zeroclaw

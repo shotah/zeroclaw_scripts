@@ -64,7 +64,9 @@ embedding_cache_size = 2000
 
 [channels.telegram.default]
 enabled = true
-# bot_token filled from TELEGRAM_BOT_TOKEN via env override
+# Required by current ZeroClaw schema (env override alone is not enough).
+# Filled by make sync-config from TELEGRAM_BOT_TOKEN.
+bot_token = ""
 
 # Who may talk to the agent on telegram.default (from TELEGRAM_ALLOWED_USERS)
 [peer_groups.telegram_default]
@@ -138,9 +140,11 @@ blocked_domains = [
 ]
 
 [gateway]
-host = "127.0.0.1"
+# Bound for LAN dashboard access (compose publishes GATEWAY_PORT, default 42617).
+# Keep this off the public internet — pairing is off and the API is open on the LAN.
+host = "0.0.0.0"
 port = 42617
-allow_public_bind = false
+allow_public_bind = true
 require_pairing = false
 
 [risk_profiles.default]

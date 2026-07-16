@@ -54,14 +54,13 @@ Curated tools are auto-approved in `config/config.toml.example` (prefixed
 
 ## 1. Optional `.env` pin
 
-**No Garmin email/password in `.env`.** Optional build pin only (already in
-`.env.example`):
+**No Garmin email/password in `.env`.** The image downloads the
+[shotah/go-garmin](https://github.com/shotah/go-garmin/releases) release
+binary (default `v0.1.0`). Override only to bump:
 
 ```env
-# GARMIN_MCP_REF=de40f7bfdc489e8b5ded3eb533586d7297513e95
+# GARMIN_MCP_VERSION=v0.1.0
 ```
-
-Leaving it unset uses the Dockerfile default commit.
 
 ---
 
@@ -201,7 +200,7 @@ mobile SSO + **DI** tokens (`diauth…/di-oauth2-service/oauth/token`), same ide
 | | Strava | Garmin (go-garmin) |
 |---|---|---|
 | App registration | Strava API app + client id/secret in `.env` | None |
-| Secrets in `.env` | `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET` | **None** (optional `GARMIN_MCP_REF`) |
+| Secrets in `.env` | `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET` | **None** (optional `GARMIN_MCP_VERSION`) |
 | One-shot auth | Browser OAuth + port `19876` | Interactive `garmin login` (TTY) |
 | Persisted artifact | `secrets/strava/tokens.json` | `secrets/garmin/session.json` |
 | Make target | `make strava-auth` | `make garmin-auth` |
@@ -220,4 +219,4 @@ mobile SSO + **DI** tokens (`diauth…/di-oauth2-service/oauth/token`), same ide
 ## Risks
 
 Unofficial Connect API (can break), MFA/session expiry, young upstream (we pin
-`GARMIN_MCP_REF`). Accept those or stay Strava-only for activities.
+`GARMIN_MCP_VERSION`). Accept those or stay Strava-only for activities.

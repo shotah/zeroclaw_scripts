@@ -36,13 +36,12 @@ rarer ops (then recreate the container).
 
 ## 1. OAuth client (once)
 
-Reuse the **Desktop** OAuth client you already use for `gws`
-(`secrets/google/client_secret.json`), or create one:
-
-1. [Google Cloud Console](https://console.cloud.google.com/) → same project
+1. [Google Cloud Console](https://console.cloud.google.com/) → project
 2. Enable APIs you need (Gmail, Calendar, Docs, Drive, Sheets, Tasks, People, …)
 3. OAuth consent (External + your Gmail as test user while in Testing)
 4. Credentials → OAuth client ID → **Desktop app**
+5. Authorized redirect URI (add if prompted):
+   `http://localhost:4100/oauth2callback`
 
 Put into `.env`:
 
@@ -52,19 +51,29 @@ GOOGLE_OAUTH_CLIENT_SECRET=GOCSPX-…
 USER_GOOGLE_EMAIL=you@gmail.com
 ```
 
+> **Testing vs Production:** OAuth apps in **Testing** expire refresh tokens
+> after ~7 days. Move the consent screen to **Production** (or re-run
+> `make google-auth` weekly).
+
 ---
 
-## 2. Import tokens from existing `gws` export (recommended)
+## 2. Authorize (`make google-auth`)
 
-If you already have `secrets/google/credentials.json` from `gws auth export`:
+Same pattern as Strava/Garmin — **no local `gws`**. Docker runs a throwaway
+Python container that:
+
+1. Clears any stale `secrets/google-mcp/credentials/<email>.json`
+2. Prints a Google consent URL
+3. Listens on `localhost:4100` for the callback
+4. Writes the MCP credential file Tim mounts at runtime
 
 ```bash
-make google-mcp-import
+make google-auth
 ```
 
-That writes
-`secrets/google-mcp/credentials/<USER_GOOGLE_EMAIL>.json` in the MCP’s
-on-disk format (refresh token + client id/secret). No browser step.
+1. Open the printed URL, approve access.
+2. Browser hits `http://localhost:4100/oauth2callback` → container captures the code.
+3. On success: `secrets/google-mcp/credentials/<you@email>.json`
 
 Then deploy:
 
@@ -72,25 +81,15 @@ Then deploy:
 make remote-deploy   # or: make build && make up
 ```
 
-Send **`/new`** in Telegram so Tim drops the old broken `google_workspace` habit.
+Send **`/new`** in Telegram so Tim drops any stale auth habit.
+
+Access tokens refresh automatically from the stored `refresh_token`. If Google
+revokes the refresh token (or Testing-mode expiry hits), re-run
+`make google-auth`.
 
 ---
 
-## 3. Fresh browser auth (only if you have no gws export)
-
-In-container OAuth callbacks bind a **random localhost port**, so remote Docker
-auth is awkward. Prefer importing from `gws` (above).
-
-If you must re-consent: run the binary on a machine with a browser, set
-`WORKSPACE_MCP_CREDENTIALS_DIR` to this repo’s
-`secrets/google-mcp/credentials`, then use an MCP client to call
-`start_google_auth` (needs gmail tools + usually `complete` tier for that tool).
-Copy the resulting `you@gmail.com.json` into `secrets/google-mcp/credentials/`
-and deploy.
-
----
-
-## 4. Config already wired
+## 3. Config already wired
 
 ```toml
 [google_workspace]
@@ -114,19 +113,15 @@ sets `WORKSPACE_MCP_CREDENTIALS_DIR`, `GOOGLE_OAUTH_*`, `USER_GOOGLE_EMAIL`.
 
 ---
 
-## Legacy `gws` CLI (optional)
+## Legacy: import from `gws` (optional)
 
-The image still includes `gws` for `docker compose exec` smoke tests. Host auth
-export remains useful as the source for `make google-mcp-import`.
+If you already have a host `gws` export and prefer not to re-consent:
 
-Windows export (UTF-8):
-
-```powershell
-gws auth login --scopes "https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/documents,https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/spreadsheets,https://www.googleapis.com/auth/tasks,https://www.googleapis.com/auth/contacts"
-$json = gws auth export --unmasked 2>$null
-if (-not $json) { $json = (gws auth export --unmasked | Out-String) }
-[System.IO.File]::WriteAllText("$PWD\secrets\google\credentials.json", $json.Trim() + "`n")
+```bash
+make google-mcp-import   # secrets/google/credentials.json → google-mcp format
 ```
+
+Prefer **`make google-auth`** for new setups (no local gws dependency).
 
 ---
 
@@ -135,12 +130,15 @@ if (-not $json) { $json = (gws auth export --unmasked | Out-String) }
 - **Docs write fails with “only lowercase…” / `batchUpdate`** — that’s the
   **built-in** tool. Confirm `[google_workspace] enabled = false` and that Tim
   is using MCP tools (`modify_doc_text`, etc.). `/new` after deploy.
-- **MCP auth / 401** — re-run `make google-mcp-import` after a fresh
-  `gws auth export`, or re-consent with scopes that include Docs.
+- **MCP auth / 401 / “expired”** — re-run `make google-auth`, then
+  `make remote-deploy`. Check OAuth app isn’t stuck in Testing (7-day refresh).
+- **Callback never completes** — port `4100` free on the host; Desktop client
+  allows `http://localhost:4100/oauth2callback`.
+- **No `refresh_token` in response** — revoke prior grant at
+  [Google Account permissions](https://myaccount.google.com/permissions), then
+  `make google-auth` again (`prompt=consent` is already set).
 - **Tim ignores Workspace MCP** — `mcp_bundles` must include
   `google-workspace`; `[mcp] deferred_loading = false`.
 - **Too many tools / context bloat** — keep `--tool-tier core`; drop unused
   services from `--tools`.
-- **`gws: not found` / legacy CLI** — rebuild image; MCP path does not need
-  `gws` at runtime.
 - **Permission denied on secrets/** — readable by `ZEROCLAW_UID` on the server.

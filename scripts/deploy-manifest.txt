@@ -12,6 +12,9 @@ config/config.toml.example
 config/config.toml
 scripts/sync-config.js
 scripts/deploy-manifest.txt
+scripts/google-auth.ps1
+scripts/google-auth.sh
+scripts/google-auth-inner.py
 scripts/google-mcp-import.ps1
 scripts/google-mcp-import.sh
 docs/telegram.md

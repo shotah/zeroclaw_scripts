@@ -10,6 +10,6 @@ For **ZeroClaw itself**, follow upstream policy: email `security@zeroclaw.dev` �
 
 - Telegram allowlist (`TELEGRAM_ALLOWED_USERS` → peer_groups) — keep non-empty
 - WhatsApp (if enabled): peer allowlist + prefer `mention_only` in groups — [docs/whatsapp.md](docs/whatsapp.md)
-- No published host ports by default (Telegram / WhatsApp Web need egress only)
+- Telegram / WhatsApp Web need egress only; gateway/dashboard is published on `:42617` for LAN — do not WAN-forward it
 - Secrets in `.env` / `secrets/google/` only — never commit
 - Treat `./config` and `./data` as sensitive (config, memory, WhatsApp session)
