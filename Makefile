@@ -1,11 +1,10 @@
 .DEFAULT_GOAL := help
 
 COMPOSE := docker compose
-SERVICE := zeroclaw
+SERVICE := gantry
 ENV_FILE := .env
 ENV_EXAMPLE := .env.example
-CONFIG_EXAMPLE := config/config.toml.example
-PERSONA_DIR := config/agents/main/workspace
+PERSONA_DIR := persona
 
 # Bust mcp-beam / youtube-go-mcp fetch stages so `latest` re-resolves each build.
 ifeq ($(OS),Windows_NT)
@@ -17,7 +16,7 @@ endif
 ifeq ($(OS),Windows_NT)
   ENV_COPY := powershell -NoProfile -Command "if (-not (Test-Path '$(ENV_FILE)')) { Copy-Item '$(ENV_EXAMPLE)' '$(ENV_FILE)'; Write-Host 'Created $(ENV_FILE) — edit GEMINI_API_KEY and Telegram vars' } else { Write-Host '$(ENV_FILE) already exists (use make env-force to overwrite)' }"
   ENV_FORCE := powershell -NoProfile -Command "Copy-Item '$(ENV_EXAMPLE)' '$(ENV_FILE)' -Force; Write-Host 'Overwrote $(ENV_FILE)'"
-  MKDIR_DATA := powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path data/.zeroclaw, data/data | Out-Null"
+  MKDIR_DATA := powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path data | Out-Null"
   RM_GARMIN_SESSION := powershell -NoProfile -Command "Remove-Item -Force -ErrorAction SilentlyContinue 'secrets/garmin/session.json'"
   # Non-empty DEPLOY_HOST in .env → push secrets after *-auth
   HAS_DEPLOY_HOST := $(shell powershell -NoProfile -Command "$$l = Get-Content .env -ErrorAction SilentlyContinue | Where-Object { $$_ -match '^DEPLOY_HOST=' } | Select-Object -First 1; if ($$l -and (($$l -split '=',2)[1].Trim())) { '1' }")
@@ -32,7 +31,7 @@ else
                 cp $(ENV_EXAMPLE) $(ENV_FILE) && echo "Created $(ENV_FILE) — edit GEMINI_API_KEY and Telegram vars"; \
               fi
   ENV_FORCE := cp $(ENV_EXAMPLE) $(ENV_FILE) && echo "Overwrote $(ENV_FILE)"
-  MKDIR_DATA := mkdir -p data/.zeroclaw data/data
+  MKDIR_DATA := mkdir -p data
   RM_GARMIN_SESSION := rm -f secrets/garmin/session.json
   HAS_DEPLOY_HOST := $(shell awk -F= '/^[[:space:]]*DEPLOY_HOST=/{v=$$2; gsub(/^[[:space:]]+|[[:space:]]+$$/,"",v); gsub(/^["'\'']|["'\'']$$/,"",v); if (v!="") print "1"}' .env 2>/dev/null)
   PERSONA_COPY := @mkdir -p $(PERSONA_DIR); \
@@ -52,25 +51,24 @@ else
   REMOTE := bash scripts/remote.sh
 endif
 
-.PHONY: help env env-force dirs init sync-config config persona persona-force build pull up down restart logs ps status shell clean \
+.PHONY: help env env-force dirs init persona persona-force build up down restart logs ps status shell clean \
         strava-auth garmin-auth google-auth google-mcp-import ytmusic-auth \
         garmin-sync strava-sync ytmusic-sync google-sync secrets-sync \
         remote-check remote-sync remote-up remote-down remote-restart remote-logs remote-ps remote-status \
-        remote-pull remote-ssh remote-deploy remote-bind
+        remote-ssh remote-deploy
 
 help: ## Show available commands
 	@echo.
-	@echo   tim  /  a lean, self-hosted assistant on ZeroClaw
-	@echo   ================================================
-	@echo   Gemini + Telegram agent in Docker. No WhatsApp. No published ports.
+	@echo   tim  /  a lean, self-hosted assistant on ai-gantry
+	@echo   =================================================
+	@echo   Gemini + Telegram agent in Docker. No dashboard. No published ports.
 	@echo.
 	@echo   Quick start (local)
 	@echo   -------------------
-	@echo     make init              Create .env, data dirs, config
+	@echo     make init              Create .env, data dir, persona files
 	@echo     # edit .env            GEMINI_API_KEY, TELEGRAM_BOT_TOKEN,
 	@echo     #                      TELEGRAM_ALLOWED_USERS
-	@echo     make sync-config       Apply .env into config/config.toml
-	@echo     make build             Thin image: distroless + gws binary
+	@echo     make build             Image: distroless/static + gantry + MCP tools
 	@echo     make up                Build if needed + start daemon
 	@echo     make logs              Watch logs / message your Telegram bot
 	@echo.
@@ -86,27 +84,25 @@ help: ## Show available commands
 	@echo     help                   Show this help (default)
 	@echo     env                    Create .env from .env.example (skip if exists)
 	@echo     env-force              Overwrite .env from .env.example
-	@echo     persona                Create workspace *.md from *.example.md (skip if exists)
-	@echo     persona-force          Overwrite workspace *.md from examples (wipes local edits)
-	@echo     dirs                   Create ./data directories
-	@echo     config                 Install config.toml template if missing
-	@echo     sync-config            Sync model + Telegram peers into config/config.toml
-	@echo     init                   env + dirs + config + persona + sync-config
+	@echo     persona                Create persona/*.md from *.example.md (skip if exists)
+	@echo     persona-force          Overwrite persona *.md from examples (wipes local edits)
+	@echo     dirs                   Create ./data directory
+	@echo     init                   env + dirs + persona
 	@echo.
 	@echo     docs/persona.md        SOUL/USER system prompt (examples vs personal files)
 	@echo     docs/models.md         Gemini / Grok chat provider swap
+	@echo     mcp.toml               MCP server manifest (which tools Tim gets)
 	@echo.
 	@echo   Local Docker
 	@echo   ------------
-	@echo     build                  Build thin image (upstream distroless + gws)
-	@echo     pull                   Pull upstream ZeroClaw base image
-	@echo     up                     sync-config + compose up -d --build
+	@echo     build                  Build image (distroless/static + gantry + MCP tools)
+	@echo     up                     compose up -d --build
 	@echo     down                   Stop and remove containers
 	@echo     restart                Restart containers
 	@echo     logs                   Follow container logs
 	@echo     ps                     Show compose status
-	@echo     status                 zeroclaw health check inside container
-	@echo     shell                  Debug shell (debian image; runtime is distroless)
+	@echo     status                 gantry health check inside container
+	@echo     shell                  Alpine shell with ./data mounted (sqlite inspection)
 	@echo     clean                  Same as down (keeps ./data)
 	@echo     strava-auth            One-time Strava OAuth; writes secrets/strava/tokens.json
 	@echo     garmin-auth            One-time Garmin login; writes secrets/garmin/session.json
@@ -129,8 +125,6 @@ help: ## Show available commands
 	@echo     remote-logs            Follow logs on server
 	@echo     remote-ps              compose ps on server
 	@echo     remote-status          Health check on server
-	@echo     remote-pull            Pull upstream base on server
-	@echo     remote-bind            Pair Telegram (make remote-bind  or  TG_USER=id)
 	@echo     remote-ssh             Interactive SSH in DEPLOY_PATH
 	@echo     remote-ssh CMD='...'   Run one remote command in DEPLOY_PATH
 	@echo     remote-deploy          remote-sync + remote-up
@@ -163,25 +157,13 @@ dirs: ## Create data directories
 	$(MKDIR_DATA)
 	@echo Data dirs ready under ./data/
 
-config: dirs ## Install config template into config/config.toml if missing
-ifeq ($(OS),Windows_NT)
-	@powershell -NoProfile -Command "if (-not (Test-Path 'config/config.toml')) { Copy-Item '$(CONFIG_EXAMPLE)' 'config/config.toml'; Write-Host 'Installed config/config.toml' } else { Write-Host 'config.toml already present' }"
-else
-	@if [ ! -f config/config.toml ]; then \
-	  cp $(CONFIG_EXAMPLE) config/config.toml && echo "Installed config/config.toml"; \
-	else echo "config.toml already present"; fi
-endif
-
-persona: ## Create agent workspace *.md from *.example.md (skips existing)
+persona: ## Create persona/*.md from *.example.md (skips existing)
 	$(PERSONA_COPY)
 
-persona-force: ## Overwrite agent workspace *.md from examples (destructive)
+persona-force: ## Overwrite persona *.md from examples (destructive)
 	$(PERSONA_FORCE)
 
-sync-config: dirs ## Sync .env model + Telegram allowlist into config/config.toml
-	@node scripts/sync-config.js
-
-init: env dirs config persona sync-config ## First-time setup: .env, dirs, config, persona
+init: env dirs persona ## First-time setup: .env, data dir, persona
 	@echo.
 	@echo Next steps:
 	@echo   1. Edit .env — GEMINI_API_KEY, TELEGRAM_*, and DEPLOY_* for remote
@@ -189,16 +171,13 @@ init: env dirs config persona sync-config ## First-time setup: .env, dirs, confi
 	@echo   3. Local:  make up
 	@echo   4. Remote: make remote-deploy
 	@echo.
-	@echo Guides: docs/telegram.md   docs/whatsapp.md   docs/google-workspace.md   docs/deploy.md
+	@echo Guides: docs/telegram.md   docs/google-workspace.md   docs/deploy.md
 	@echo.
 
-build: ## Build thin image (distroless + gws binary)
+build: ## Build image (distroless/static + gantry + MCP tool binaries)
 	$(COMPOSE) build --build-arg TOOLS_CACHEBUST=$(TOOLS_CACHEBUST) $(SERVICE)
 
-pull: ## Pull upstream ZeroClaw base image
-	docker pull ghcr.io/zeroclaw-labs/zeroclaw:latest
-
-up: sync-config ## Start ZeroClaw daemon locally (build if needed; no published ports)
+up: ## Start gantry daemon locally (build if needed; no published ports)
 	$(COMPOSE) build --build-arg TOOLS_CACHEBUST=$(TOOLS_CACHEBUST) $(SERVICE)
 	$(COMPOSE) up -d $(SERVICE)
 
@@ -214,14 +193,11 @@ logs: ## Follow local logs
 ps: ## Local container status
 	$(COMPOSE) ps
 
-status: ## Local ZeroClaw health
-	$(COMPOSE) exec $(SERVICE) zeroclaw status --format=exit-code && echo OK || echo FAILED
+status: ## Local gantry health (exit-code heartbeat check)
+	$(COMPOSE) exec -T $(SERVICE) /usr/local/bin/gantry status && echo OK || echo FAILED
 
-shell: ## Shell via debian image (distroless has no shell)
-	docker run --rm -it --entrypoint sh \
-	  -v "$(CURDIR)/data:/zeroclaw-data" \
-	  --env-file .env \
-	  ghcr.io/zeroclaw-labs/zeroclaw:debian
+shell: ## Alpine shell with ./data mounted (runtime image has no shell)
+	docker run --rm -it -v "$(CURDIR)/data:/data" -w /data alpine:3.20 sh
 
 clean: ## Stop local containers (keeps ./data)
 	$(COMPOSE) down
@@ -275,7 +251,7 @@ ytmusic-auth: ## YouTube Music browser headers → secrets/ytmusic/headers.json 
 	@echo DevTools → Network → browse → Request Headers: copy cookie, then x-goog-authuser.
 	@echo The CLI prompts for each value. See docs/ytmusic.md.
 	$(COMPOSE) run --rm --build -it --entrypoint youtube-go-mcp $(SERVICE) \
-	  auth --out /zeroclaw-data/.config/ytmusic/headers.json
+	  auth --out /data/.config/ytmusic/headers.json
 	$(call PUSH_SECRET_IF_REMOTE,ytmusic)
 
 google-auth: ## Google Workspace OAuth via container; writes secrets/google-mcp (see docs/google-workspace.md)
@@ -299,7 +275,7 @@ endif
 remote-check: ## Test SSH + Docker on DEPLOY_HOST
 	$(REMOTE) check
 
-remote-sync: sync-config persona ## Copy compose/.env/config/persona to server (does not sync data volume)
+remote-sync: persona ## Copy compose/.env/mcp.toml/persona to server (does not sync data volume)
 	$(REMOTE) sync
 
 remote-up: ## docker compose up -d on server
@@ -320,16 +296,10 @@ remote-ps: ## docker compose ps on server
 remote-status: ## Health check on server
 	$(REMOTE) status
 
-remote-pull: ## Pull image on server
-	$(REMOTE) pull
-
-remote-bind: ## Pair Telegram user (TG_USER=id or first TELEGRAM_ALLOWED_USERS)
-	$(REMOTE) bind $(TG_USER)
-
 remote-ssh: ## SSH into server (cd DEPLOY_PATH). Extra args: make remote-ssh CMD='ls'
 	$(REMOTE) ssh $(CMD)
 
 remote-deploy: remote-sync remote-up ## Sync files then start on server
 	@echo.
-	@echo Deployed. If Telegram asks to bind: make remote-bind
+	@echo Deployed. Message your Telegram bot — allowlist is TELEGRAM_ALLOWED_USERS.
 	@echo.

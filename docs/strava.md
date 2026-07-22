@@ -3,7 +3,7 @@
 Give Tim your training history so he can nudge you ("bro, get to the gym"),
 suggest rest, and summarize the week. This uses the
 [StravaMCP](https://github.com/Stealinglight/StravaMCP) server — a single static
-Go binary baked into the image (like `gws`) that ZeroClaw launches over stdio.
+Go binary baked into the image that gantry launches over stdio.
 
 **Using a Garmin?** Connect the watch to Strava once (Garmin Connect → Settings →
 Connected Apps → Strava). Every activity then auto-syncs to Strava and Tim reads
@@ -14,7 +14,7 @@ Upstream: [StravaMCP](https://github.com/Stealinglight/StravaMCP) ·
 
 ```mermaid
 flowchart LR
-  ZC[zeroclaw daemon] -->|MCP stdio| SM[strava-mcp]
+  GN[gantry daemon] -->|MCP stdio| SM[strava-mcp]
   SM -->|OAuth2 HTTPS| ST[Strava API v3]
   SM --- TOK[("secrets/strava/tokens.json")]
 ```
@@ -71,7 +71,7 @@ callback port, runs `strava-mcp auth`). The raw equivalent, if you're not using
 `make`:
 
 ```bash
-docker compose run --rm --build -p 19876:19876 --entrypoint strava-mcp zeroclaw auth
+docker compose run --rm --build -p 19876:19876 --entrypoint strava-mcp gantry auth
 ```
 
 1. It prints `Open this URL in your browser: https://www.strava.com/oauth/authorize?...`
@@ -81,10 +81,10 @@ docker compose run --rm --build -p 19876:19876 --entrypoint strava-mcp zeroclaw 
    `Authenticated as <Your Name>!`.
 
 That writes `secrets/strava/tokens.json` (gitignored, mounted at
-`/zeroclaw-data/.config/strava`). `strava-mcp` refreshes the access token
+`/data/.config/strava`). `strava-mcp` refreshes the access token
 automatically from here on.
 
-> `--entrypoint strava-mcp` swaps the image's default `zeroclaw` entrypoint for
+> `--entrypoint strava-mcp` swaps the image's default `gantry` entrypoint for
 > the tool binary. `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, and
 > `STRAVA_TOKEN_PATH` already come from `.env` / `docker-compose.yml`. The
 > callback has a 2-minute timeout, so have the browser ready.
@@ -117,10 +117,9 @@ callback still lands. Point `STRAVA_TOKEN_PATH` at the repo's
 ## 3. Build + deploy
 
 ```bash
-make sync-config     # regenerates config/config.toml with the [mcp] block
 make build           # bakes strava-mcp into the image
 make up              # local
-# or: make remote-deploy   # config/image only — tokens are separate
+# or: make remote-deploy   # image/manifest only — tokens are separate
 make strava-sync           # push tokens.json when you mean to
 ```
 
@@ -142,50 +141,22 @@ Over Telegram:
 
 ## Config (already wired)
 
-`config/config.toml.example` registers the MCP server, **grants it to the
-agent** (ZeroClaw 0.8.2 is secure-by-default), and auto-approves the tools:
+`mcp.toml` lists the server — and with gantry, **listed = granted**. There are
+no bundles, no deferred loading, and no approval prompts to configure:
 
 ```toml
-[agents.main]
-# ...
-mcp_bundles = ["strava"]        # grant the bundle to this agent
-
-[mcp]
-enabled = true
-deferred_loading = false        # eager-load tool schemas (see note below)
-
-[[mcp.servers]]
-name = "strava"
-transport = "stdio"
+[[server]]
+name    = "strava"
 command = "strava-mcp"
-
-[mcp_bundles.strava]
-servers = ["strava"]            # bundle that grants the "strava" server
-
-[risk_profiles.default]
-auto_approve = [
-  # ...
-  "strava__strava_get_activities",   # prefixed <server>__<tool> names
-  "strava__strava_get_athlete_stats",
-  # ... (all 11 strava__* tools)
-]
 ```
 
-Three separate gates matter (ZeroClaw ≥ 0.8.2):
-
-1. **Grant** — `agents.main.mcp_bundles = ["strava"]` + `[mcp_bundles.strava]`.
-   Without this, the agent sees **zero** Strava tools and improvises (it'll
-   search Gmail for "strava"). Registering `[[mcp.servers]]` alone is not enough.
-2. **Load** — `deferred_loading = false`. With `true` (an option, not the 0.8.2
-   default), the model must call the built-in `tool_search` to activate tools
-   first; Gemini Flash doesn't reliably do that, so `false` loads them eagerly.
-3. **Approve** — `auto_approve` needs the exact prefixed name
-   (`strava__<tool>`); a bare `"strava"` does **not** match, so every call would
-   prompt (and over Telegram that can't be answered).
+Tools reach the model as `strava__<tool>` (server-prefixed, eager-loaded at
+boot). If the binary can't start, gantry fails the boot loudly instead of
+letting the model improvise.
 
 Credentials come from the container environment (set in `.env`, passed through
 `docker-compose.yml`): `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, and
-`STRAVA_TOKEN_PATH=/zeroclaw-data/.config/strava/tokens.json` (the mounted
+`STRAVA_TOKEN_PATH=/data/.config/strava/tokens.json` (the mounted
 `./secrets/strava`).
 
 ---
@@ -194,11 +165,9 @@ Credentials come from the container environment (set in `.env`, passed through
 
 | Symptom | Likely fix |
 |---|---|
-| Tim doesn't see Strava tools (searches Gmail instead) | **Grant the bundle:** `agents.main.mcp_bundles = ["strava"]` + `[mcp_bundles.strava] servers = ["strava"]`. ZeroClaw 0.8.2 is secure-by-default — `[[mcp.servers]]` alone doesn't reach the agent. Also `[mcp] enabled = true`, `deferred_loading = false`, and rebuild so `strava-mcp` is in the image |
-| `strava-mcp: not found` | Rebuild the image (`make build` / `make remote-deploy`) |
+| Tim doesn't see Strava tools | Check the `[[server]]` entry exists in `mcp.toml` and rebuild so `strava-mcp` is in the image — listed = granted, nothing else to wire |
+| Boot fails with `mcp: boot server "strava"` | The binary is missing or crashing at start — rebuild the image (`make build` / `make remote-deploy`) and check `make logs` for the tool's stderr |
 | Auth / 401 / token errors | `make strava-auth` (or `make strava-sync` after a local re-auth) |
-| Loop detector: `tool 'shell' called N times` | Same cause as "doesn't see Strava tools" — with no Strava tools granted, the model flails calling `shell`. Grant the bundle (row above) |
-| Every call asks for approval | Add the **exact** prefixed names `strava__<tool>` to `risk_profiles.default.auto_approve` — a bare `"strava"` does not match |
 | No activities | Confirm the watch/app actually syncs to Strava (Garmin → Connected Apps → Strava) |
 | Rate limited | Strava caps ~100 req/15 min, 1000/day — ask for summaries, not per-second polling |
 | No Windows binary | Use the container flow in [step 2](#2-authorize-once-no-local-install) — no local install; only the token file needs to reach the server |

@@ -1,6 +1,7 @@
-# SMS / texting for Tim (proposal)
+# SMS / texting for Tim (proposal — legacy research)
 
-**Status:** research — **not wired.** Telegram stays the default channel.
+**Status:** research — **not wired**, and channels beyond Telegram are an
+explicit ai-gantry non-goal. Kept for reference. Telegram stays the channel.
 
 You asked about Twilio (~$1/mo number + ~$0.007/SMS) and whether **Google**
 is a better fit because Tim already uses Gemini + Google Workspace. Short

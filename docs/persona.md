@@ -1,17 +1,20 @@
 # Persona & system prompt (Tim)
 
-ZeroClaw builds Tim’s system prompt each session from markdown in:
+gantry builds Tim's system prompt each session from markdown in:
 
 ```text
-config/agents/main/workspace/
+persona/
 ```
 
-That directory is bind-mounted with `./config` → `/zeroclaw-data/.zeroclaw` on the server.
+That directory is bind-mounted read-only at `/persona` in the container.
+Files concatenate in a fixed order (`SOUL.md`, `IDENTITY.md`, `USER.md`,
+`AGENTS.md`, `TOOLS.md`, `HEARTBEAT.md`, `BOOTSTRAP.md`, `MEMORY.md`);
+missing files are skipped, and any other `*.md` follows alphabetically.
 
 ## Templates vs personal files
 
 | Committed (safe) | Local / server (gitignored) |
-|---|---|
+| --- | --- |
 | `SOUL.example.md` | `SOUL.md` |
 | `USER.example.md` | `USER.md` |
 | `IDENTITY.example.md` | `IDENTITY.md` |
@@ -31,27 +34,30 @@ Fill in **`USER.md`** (name, canonical Google email, city) before expecting good
 ## What each file is for
 
 | File | Purpose |
-|---|---|
+| --- | --- |
 | `SOUL.md` | Personality, coach mode, anti-hallucination rules |
 | `USER.md` | Who you are — **canonical email lives here** |
-| `IDENTITY.md` | Name “Tim”, vibe |
+| `IDENTITY.md` | Name "Tim", vibe |
 | `AGENTS.md` | Operating rules / workflows |
 | `TOOLS.md` | How to use Google / Strava / Garmin / Cast / YT Music / memory |
-| `MEMORY.md` | Curated long-term notes (injected in main session) |
+| `MEMORY.md` | Curated long-term notes (injected every session) |
 | `HEARTBEAT.md` | Optional periodic checks (empty = skip) |
 
-These are **not** the same as hybrid SQLite memory (`brain.db`).
-Persona files = doctrine you control. Hybrid memory = auto-recall (can go wrong).
+These are **not** the same as gantry's SQLite memory (`data/gantry.db`).
+Persona files = doctrine you control, loaded every session. SQLite memory =
+recall Tim writes deliberately (`memory_store`) and can get wrong.
+**Persona precedence is law**: anything in `USER.md` outranks recalled memory.
 
 ## Edit & deploy
 
 ```bash
-# edit config/agents/main/workspace/*.md  (gitignored)
+# edit persona/*.md  (gitignored)
 make remote-sync          # ensures persona files exist, then scp
 make remote-restart       # or remote-up if down
 ```
 
-After a bad session: Telegram `/new`, and scrub bad hybrid memories if needed.
+After a bad session: Telegram `/new`, and scrub bad memory rows if needed
+(`make shell` → `sqlite3 gantry.db` or ask Tim to `memory_forget`).
 
 ## Related
 

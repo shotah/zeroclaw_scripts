@@ -1,19 +1,18 @@
 # Web search (Gemini Google Search grounding)
 
-Tim’s built-in ZeroClaw `web_search` scrapes DuckDuckGo. From Docker that
-often hits a bot wall and retry loops. Instead we bake
+gantry has no built-in web search (by design — capabilities are MCP binaries).
+We bake
 [zchee/mcp-gemini-google-search](https://github.com/zchee/mcp-gemini-google-search)
 — a static Go MCP that calls **Gemini Grounding with Google Search** using the
-same `GEMINI_API_KEY` already in `.env`.
+same `GEMINI_API_KEY` already in `.env`. (The old ZeroClaw built-in scraped
+DuckDuckGo and hit bot walls from Docker; this is the fix that stuck.)
 
 ```mermaid
 flowchart LR
-  ZC[zeroclaw daemon] -->|MCP stdio| GS["mcp-gemini-google-search"]
+  GN[gantry daemon] -->|MCP stdio| GS["mcp-gemini-google-search"]
   GS -->|generateContent + google_search| G[Gemini API]
   G --> Web[Google Search]
 ```
-
-Built-in `[web_search] enabled = false` so Tim does not call DuckDuckGo.
 
 ---
 
@@ -43,23 +42,15 @@ Optional pin override:
 
 ## Config wiring
 
+`mcp.toml` (listed = granted):
+
 ```toml
-mcp_bundles = ["strava", "garmin", "google-search"]
-
-[[mcp.servers]]
-name = "google-search"
-transport = "stdio"
+[[server]]
+name    = "google-search"
 command = "mcp-gemini-google-search"
-
-[mcp_bundles.google-search]
-servers = ["google-search"]
-
-[web_search]
-enabled = false
 ```
 
-Tool Tim should use: `google_search` (query string). Keep `web_fetch` for
-opening a specific URL after search.
+Tool Tim should use: `google-search__google_search` (query string).
 
 ---
 
@@ -76,13 +67,13 @@ grounding.
 
 ```bash
 make build
-docker compose run --rm --entrypoint mcp-gemini-google-search zeroclaw -h || true
+docker compose run --rm --entrypoint mcp-gemini-google-search gantry -h || true
 # Binary is stdio-only; real check is Telegram:
 ```
 
 Ask Tim: “Search the web for today’s Seattle weather summary.”
 
-He should call `google_search`, not DuckDuckGo / built-in `web_search`.
+He should call `google-search__google_search`.
 
 ---
 
@@ -90,7 +81,6 @@ He should call `google_search`, not DuckDuckGo / built-in `web_search`.
 
 | Symptom | Likely fix |
 |---|---|
-| DuckDuckGo / “blocked automated search” | Confirm `[web_search] enabled = false` and rebuild so the MCP binary is present |
-| Tim doesn’t see `google_search` | Grant bundle `google-search`; `[mcp] deferred_loading = false`; rebuild |
+| Tim doesn’t see `google_search` | Check the `[[server]]` entry in `mcp.toml`; rebuild so the binary is present |
 | `GEMINI_API_KEY` / grounding errors | Billing enabled on the Google AI project; key has access to search grounding |
 | Expensive search model | Keep `GEMINI_MODEL=gemini-3.5-flash` (MCP defaults to a Pro preview if unset) |

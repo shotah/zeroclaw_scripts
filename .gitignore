@@ -36,20 +36,16 @@ secrets/ytmusic/*
 # Scratch HOME used for local garmin CLI smoke tests (never commit)
 secrets/garmin_home_tmp/
 
-# Generated config + ZeroClaw pairing/agent state (synced / runtime)
-config/*
-!config/config.toml.example
-# Agent persona: commit only *.example.md templates. Live *.md are local/generated.
-!config/agents/
-config/agents/*
-!config/agents/main/
-config/agents/main/*
-!config/agents/main/workspace/
-config/agents/main/workspace/*
-!config/agents/main/workspace/*.example.md
-config/agents/main/workspace/memory/
+# Legacy ZeroClaw config tree (kept until cutover is confirmed; then delete)
+config/
 
-# Workspace / memory volume
+# Agent persona: commit only *.example.md templates. Live *.md are personal.
+persona/*
+!persona/*.example.md
+
+# MCP manifest is committed (mcp.toml) — no generated config anymore.
+
+# Data volume (gantry.db: sessions + memory + heartbeat)
 data/
 !data/.gitkeep
 

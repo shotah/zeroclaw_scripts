@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Remote deploy helper (Unix / WSL / Ubuntu workstation → Ubuntu server)
-# Usage: ./scripts/remote.sh <check|sync|up|down|restart|logs|ps|status|pull|ssh> [remote cmd...]
+# Usage: ./scripts/remote.sh <check|sync|sync-secret|up|down|restart|logs|ps|status|ssh> [remote cmd...]
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -17,7 +17,7 @@ load_env() {
 load_env
 : "${DEPLOY_HOST:?Set DEPLOY_HOST in .env}"
 DEPLOY_USER="${DEPLOY_USER:-ubuntu}"
-DEPLOY_PATH="${DEPLOY_PATH:-/opt/zeroclaw}"
+DEPLOY_PATH="${DEPLOY_PATH:-/opt/gantry}"
 DEPLOY_SSH_PORT="${DEPLOY_SSH_PORT:-22}"
 
 SSH_OPTS=(-p "$DEPLOY_SSH_PORT" -o StrictHostKeyChecking=accept-new)
@@ -40,7 +40,7 @@ read_manifest_lines() {
 }
 
 ensure_remote_parents() {
-  local dirs=(data/data)
+  local dirs=(data)
   local f
   for f in "$@"; do
     [[ "$f" == */* ]] && dirs+=("${f%/*}")
@@ -76,8 +76,6 @@ case "$ACTION" in
     remote "echo ok && uname -a && docker --version && docker compose version"
     ;;
   sync)
-    command -v node >/dev/null && node scripts/sync-config.js || true
-
     # Code/config only — credentials use sync-secret (see secrets-manifest.txt)
     mapfile -t files < <(read_manifest_lines scripts/deploy-manifest.txt)
     ensure_remote_parents "${files[@]}"
@@ -130,23 +128,7 @@ case "$ACTION" in
   restart) remote "cd '$DEPLOY_PATH' && docker compose restart" ;;
   logs) ssh "${SSH_OPTS[@]}" -t "$TARGET" "cd '$DEPLOY_PATH' && docker compose logs -f --tail=100" ;;
   ps) remote "cd '$DEPLOY_PATH' && docker compose ps" ;;
-  status) remote "cd '$DEPLOY_PATH' && docker compose exec -T zeroclaw zeroclaw status --format=exit-code && echo OK" ;;
-  pull)
-    bust=$(date +%s)
-    remote "cd '$DEPLOY_PATH' && docker compose build --pull --build-arg TOOLS_CACHEBUST=$bust"
-    ;;
-  bind)
-    UID_ARG="${1:-}"
-    if [[ -z "$UID_ARG" && -n "${TELEGRAM_ALLOWED_USERS:-}" ]]; then
-      UID_ARG="${TELEGRAM_ALLOWED_USERS%%,*}"
-      UID_ARG="$(echo "$UID_ARG" | tr -d '[:space:]')"
-    fi
-    [[ -n "$UID_ARG" ]] || { echo "Usage: $0 bind <telegram_user_id>"; exit 1; }
-    echo "Binding Telegram user $UID_ARG on server..."
-    # Schema v3: bind fills external_peers; agents must include the agent alias.
-    remote "cd '$DEPLOY_PATH' && docker compose exec -T zeroclaw zeroclaw channel bind-telegram $UID_ARG && docker compose exec -T zeroclaw zeroclaw config set peer_groups.telegram_default.agents '[\"main\"]' && docker compose restart zeroclaw"
-    echo "Bound. Send your Telegram message again."
-    ;;
+  status) remote "cd '$DEPLOY_PATH' && docker compose exec -T gantry /usr/local/bin/gantry status && echo OK" ;;
   ssh)
     if [[ $# -gt 0 ]]; then
       ssh "${SSH_OPTS[@]}" -t "$TARGET" "cd '$DEPLOY_PATH' && $*"
@@ -155,7 +137,7 @@ case "$ACTION" in
     fi
     ;;
   *)
-    echo "Usage: $0 <check|sync|sync-secret|up|down|restart|logs|ps|status|pull|ssh|bind>"
+    echo "Usage: $0 <check|sync|sync-secret|up|down|restart|logs|ps|status|ssh>"
     exit 1
     ;;
 esac

@@ -1,4 +1,9 @@
-# WhatsApp setup (ZeroClaw)
+# WhatsApp setup (legacy — ZeroClaw era)
+
+> **Status: not applicable on ai-gantry.** This doc is kept for reference from
+> the ZeroClaw days. gantry ships Telegram + stdio only — extra channels are an
+> explicit non-goal (one persona, one channel, one container). If a friend
+> needs WhatsApp, that would be a separate runtime, not a flag here.
 
 Telegram stays the default channel. WhatsApp is **optional** when friends only
 live on WhatsApp (DM or a small group).
@@ -160,9 +165,9 @@ Then continue with the [Web mode recipe](#friend--group-recipe-web-mode--recomme
   verify token (and preferably `app_secret` for signature checks).
 - Meta POSTs inbound traffic to your gateway. Configure ZeroClaw’s top-level
   `[tunnel]` (or your own reverse proxy).
-- Callback URL is **per alias**:  
-  `GET`/`POST https://<public-host>/whatsapp/<alias>`  
-  e.g. `[channels.whatsapp.default]` → `/whatsapp/default`.  
+- Callback URL is **per alias**:
+  `GET`/`POST https://<public-host>/whatsapp/<alias>`
+  e.g. `[channels.whatsapp.default]` → `/whatsapp/default`.
   Bare `/whatsapp` still works but is **deprecated** (first alias
   lexicographically; sets `X-Zeroclaw-Deprecation`).
 
@@ -294,11 +299,11 @@ on a home server.
 WhatsApp is **opt-in** (example config is Telegram-only):
 
 1. `[channels.whatsapp.default]` — **either** `session_path` (Web) **or**
-   `phone_number_id` (Cloud), not both  
-2. Web: `mode = "personal"` + allowlist policies  
-3. `[peer_groups.whatsapp_default]` — `agents = ["main"]` + E.164 peers  
-4. `[agents.main].channels` — include `"whatsapp.default"`  
-5. `make remote-deploy` → link device → `channel doctor` → DM → group  
+   `phone_number_id` (Cloud), not both
+2. Web: `mode = "personal"` + allowlist policies
+3. `[peer_groups.whatsapp_default]` — `agents = ["main"]` + E.164 peers
+4. `[agents.main].channels` — include `"whatsapp.default"`
+5. `make remote-deploy` → link device → `channel doctor` → DM → group
 
 `.env` does **not** sync WhatsApp peers yet (Telegram only). Edit
 `config/config.toml` or `zeroclaw config set` over SSH.

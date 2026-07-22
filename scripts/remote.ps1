@@ -1,9 +1,9 @@
 # Remote deploy helper (Windows OpenSSH client → Ubuntu server)
-# Usage: powershell -File scripts/remote.ps1 <check|sync|up|down|restart|logs|ps|status|pull|ssh> [extra ssh args]
+# Usage: powershell -File scripts/remote.ps1 <check|sync|sync-secret|up|down|restart|logs|ps|status|ssh> [extra ssh args]
 
 param(
   [Parameter(Position = 0, Mandatory = $true)]
-  [ValidateSet('check', 'sync', 'sync-secret', 'up', 'down', 'restart', 'logs', 'ps', 'status', 'pull', 'ssh', 'bind')]
+  [ValidateSet('check', 'sync', 'sync-secret', 'up', 'down', 'restart', 'logs', 'ps', 'status', 'ssh')]
   [string]$Action,
 
   [Parameter(ValueFromRemainingArguments = $true)]
@@ -83,7 +83,7 @@ Write-Host "Using SSH: $SshExe"
 $envMap = Read-DotEnv (Join-Path $Root '.env')
 $hostName = $envMap['DEPLOY_HOST']
 $user = if ($envMap['DEPLOY_USER']) { $envMap['DEPLOY_USER'] } else { 'ubuntu' }
-$deployPath = if ($envMap['DEPLOY_PATH']) { $envMap['DEPLOY_PATH'] } else { '/opt/zeroclaw' }
+$deployPath = if ($envMap['DEPLOY_PATH']) { $envMap['DEPLOY_PATH'] } else { '/opt/gantry' }
 $sshPort = if ($envMap['DEPLOY_SSH_PORT']) { $envMap['DEPLOY_SSH_PORT'] } else { '22' }
 $key = $envMap['DEPLOY_SSH_KEY']
 
@@ -118,7 +118,7 @@ function Get-ManifestPaths([string]$ManifestPath) {
 }
 
 function Ensure-RemoteParents([string[]]$RelPaths) {
-  $dirs = @('data/data')
+  $dirs = @('data')
   $dirs += $RelPaths | ForEach-Object { ($_ -replace '\\', '/') } |
     Where-Object { $_.Contains('/') } |
     ForEach-Object { $_.Substring(0, $_.LastIndexOf('/')) }
@@ -158,11 +158,6 @@ switch ($Action) {
     Write-Host "Remote OK"
   }
   'sync' {
-    # Render config locally first if node is available
-    if (Get-Command node -ErrorAction SilentlyContinue) {
-      node (Join-Path $Root 'scripts/sync-config.js')
-    }
-
     # Code/config only - credentials use sync-secret (see secrets-manifest.txt)
     $files = Get-ManifestPaths (Join-Path $Root 'scripts/deploy-manifest.txt')
     Ensure-RemoteParents $files
@@ -220,26 +215,7 @@ switch ($Action) {
     Invoke-Remote "cd '${deployPath}' && docker compose ps"
   }
   'status' {
-    Invoke-Remote "cd '${deployPath}' && docker compose exec -T zeroclaw zeroclaw status --format=exit-code && echo OK"
-  }
-  'pull' {
-    $bust = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-    Invoke-Remote "cd '${deployPath}' && docker compose pull --ignore-buildable 2>/dev/null; docker compose build --pull --build-arg TOOLS_CACHEBUST=$bust"
-  }
-  'bind' {
-    $uid = $null
-    if ($Rest -and $Rest.Count -gt 0) {
-      $uid = $Rest[0]
-    } elseif ($envMap['TELEGRAM_ALLOWED_USERS']) {
-      $uid = ($envMap['TELEGRAM_ALLOWED_USERS'] -split ',')[0].Trim()
-    }
-    if (-not $uid) {
-      throw "Pass a Telegram user id: make remote-bind TG_USER=123456789 (or set TELEGRAM_ALLOWED_USERS)"
-    }
-    Write-Host "Binding Telegram user $uid on server..."
-    # Schema v3: bind fills external_peers; agents must include the agent alias.
-    Invoke-Remote "cd '${deployPath}' && docker compose exec -T zeroclaw zeroclaw channel bind-telegram $uid && docker compose exec -T zeroclaw zeroclaw config set peer_groups.telegram_default.agents '[`"main`"]' && docker compose restart zeroclaw"
-    Write-Host "Bound. Send your Telegram message again."
+    Invoke-Remote "cd '${deployPath}' && docker compose exec -T gantry /usr/local/bin/gantry status && echo OK"
   }
   'ssh' {
     if ($Rest -and $Rest.Count -gt 0) {

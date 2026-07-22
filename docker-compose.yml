@@ -1,19 +1,18 @@
-# Lean ZeroClaw stack — Gemini + Telegram (Telegram polls outbound).
-# Gateway/dashboard published on 42617 for LAN access (keep off the public internet).
-# Image: distroless upstream + gws + google-workspace-mcp-go + strava + garmin + gemini-search + mcp-beam + youtube-go-mcp.
+# tim on ai-gantry — Gemini + Telegram (Telegram polls outbound).
+# No ports, no gateway, no dashboard: the healthcheck is an exit code.
+# Image: distroless/static + gantry + google-workspace-mcp-go + strava + garmin + gemini-search + mcp-beam + youtube-go-mcp.
 # Docs: docs/telegram.md, docs/google-workspace.md, docs/strava.md, docs/garmin.md, docs/web-search.md, docs/cast.md, docs/ytmusic.md
 # Cast mDNS: set NETWORK_MODE=host in .env on the Linux home server (docs/cast.md).
 
 services:
-  zeroclaw:
+  gantry:
     build:
       context: .
       # Defaults live once in the Dockerfile (ARG ...). Listing the names here
       # (no values) forwards an override from .env / the environment when set,
       # and otherwise falls back to the Dockerfile default.
       args:
-        - ZEROCLAW_BASE
-        - GWS_VERSION
+        - GANTRY_VERSION
         - STRAVA_MCP_VERSION
         - GARMIN_MCP_VERSION
         - GEMINI_SEARCH_MCP_REF
@@ -21,81 +20,75 @@ services:
         - MCP_BEAM_VERSION
         - YOUTUBE_GO_MCP_VERSION
         - TOOLS_CACHEBUST
-    image: ${ZEROCLAW_IMAGE:-zeroclaw-gws:local}
-    container_name: zeroclaw
+    image: ${GANTRY_IMAGE:-gantry-tim:local}
+    container_name: gantry
     restart: unless-stopped
     # bridge (default) for Docker Desktop / normal NAT; host for Cast mDNS on Linux.
     network_mode: ${NETWORK_MODE:-bridge}
-    # Match the deploy user on the server (id -u / id -g). Avoids UID 65534 data fights.
-    user: "${ZEROCLAW_UID:-1000}:${ZEROCLAW_GID:-1000}"
-    # Writable CWD for leftover gws CLI deletes (docs/google-workspace.md).
-    working_dir: /zeroclaw-scratch
+    # Match the deploy user on the server (id -u / id -g). Avoids UID 65532 data fights.
+    user: "${GANTRY_UID:-1000}:${GANTRY_GID:-1000}"
     env_file:
       - path: .env
         required: false
     environment:
-      HOME: /zeroclaw-data
-      ZEROCLAW_DATA_DIR: /zeroclaw-data/data
+      # MCP children resolve $XDG_CONFIG_HOME/... via HOME (garmin session etc.).
+      HOME: /data
       # Container clock defaults to UTC without this — cron + "what time is it" go wrong.
       TZ: ${TZ:-America/Los_Angeles}
-      ZEROCLAW_providers__models__gemini__default__api_key: ${GEMINI_API_KEY:-}
-      ZEROCLAW_providers__models__gemini__default__model: ${GEMINI_MODEL:-gemini-3.5-flash}
-      ZEROCLAW_channels__telegram__default__bot_token: ${TELEGRAM_BOT_TOKEN:-}
-      ZEROCLAW_channels__telegram__default__enabled: "true"
-      ZEROCLAW_gateway__host: "0.0.0.0"
-      ZEROCLAW_gateway__port: "42617"
-      ZEROCLAW_gateway__allow_public_bind: "true"
-      # Gemini Google Search MCP (zchee) inherits these — same key as chat.
+      CRON_TZ: ${TZ:-America/Los_Angeles}
+      # --- gantry core (see shotah/ai-gantry §5.1) ---------------------------
+      # Chat provider is any OpenAI-compatible endpoint. Defaults: Gemini via
+      # the familiar GEMINI_* keys; override LLM_* directly for xAI/Ollama/etc.
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
+      LLM_API_KEY: ${LLM_API_KEY:-${GEMINI_API_KEY:-}}
+      LLM_MODEL: ${LLM_MODEL:-${GEMINI_MODEL:-gemini-3.5-flash}}
+      CHANNEL: telegram
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
+      PERSONA_DIR: /persona
+      DATA_DIR: /data
+      MCP_MANIFEST: /etc/gantry/mcp.toml
+      STREAM_REPLIES: ${STREAM_REPLIES:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # --- MCP child processes inherit everything below ----------------------
+      # Gemini Google Search MCP (zchee) — same key as chat.
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
-      # OpenAI-compatible client for ZeroClaw hybrid memory embeddings
-      # (Gemini embeddings endpoint in config.toml). Same key as chat.
-      OPENAI_API_KEY: ${GEMINI_API_KEY:-}
       # Google Workspace MCP (magks) — OAuth client + token dir (docs/google-workspace.md).
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
       USER_GOOGLE_EMAIL: ${USER_GOOGLE_EMAIL:-}
-      WORKSPACE_MCP_CREDENTIALS_DIR: /zeroclaw-data/.config/google-mcp/credentials
-      # Optional legacy gws CLI (docker exec). Prefer the MCP for Tim.
-      GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND: file
-      GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE: /zeroclaw-data/.config/gws/credentials.json
+      WORKSPACE_MCP_CREDENTIALS_DIR: /data/.config/google-mcp/credentials
       # Strava MCP subprocess inherits these (see docs/strava.md). Token persists on the mount.
       STRAVA_CLIENT_ID: ${STRAVA_CLIENT_ID:-}
       STRAVA_CLIENT_SECRET: ${STRAVA_CLIENT_SECRET:-}
-      STRAVA_TOKEN_PATH: /zeroclaw-data/.config/strava/tokens.json
+      STRAVA_TOKEN_PATH: /data/.config/strava/tokens.json
       # Garmin MCP: no email/password env — session.json on the mount (docs/garmin.md).
       # Cast MCP (mcp-beam): no API keys. Optional knobs in docs/cast.md.
       MCP_BEAM_LOG_LEVEL: ${MCP_BEAM_LOG_LEVEL:-info}
       # YouTube Music MCP (youtube-go-mcp): browser headers on the mount (docs/ytmusic.md).
-      YTMUSIC_HEADERS_PATH: /zeroclaw-data/.config/ytmusic/headers.json
-    ports:
-      # Web dashboard + REST/WS gateway — LAN only; do not port-forward from the WAN.
-      # Ignored when NETWORK_MODE=host (gateway still binds host :42617 via config).
-      - "${GATEWAY_PORT:-42617}:42617"
+      YTMUSIC_HEADERS_PATH: /data/.config/ytmusic/headers.json
     volumes:
-      # Full .zeroclaw dir (config.toml + pairing/agent state) — owned by deploy user
-      - ./config:/zeroclaw-data/.zeroclaw
-      # Workspace / memory
-      - ./data:/zeroclaw-data/data
-      # Google Workspace MCP OAuth tokens (gitignored). Import via make google-mcp-import.
-      - ./secrets/google-mcp:/zeroclaw-data/.config/google-mcp
-      # Optional legacy gws CLI export (gitignored).
-      - ./secrets/google/credentials.json:/zeroclaw-data/.config/gws/credentials.json:ro
-      - ./secrets/google/client_secret.json:/zeroclaw-data/.config/gws/client_secret.json:ro
+      # Persona markdown (SOUL.md USER.md TOOLS.md ...) — the system prompt
+      - ./persona:/persona:ro
+      # MCP server manifest — the one structured config file
+      - ./mcp.toml:/etc/gantry/mcp.toml:ro
+      # gantry.db (sessions + memory + heartbeat) and MCP tool state
+      - ./data:/data
+      # Google Workspace MCP OAuth tokens (gitignored). Create via make google-auth.
+      - ./secrets/google-mcp:/data/.config/google-mcp
       # Strava OAuth token (gitignored). Create via docs/strava.md
-      - ./secrets/strava:/zeroclaw-data/.config/strava
+      - ./secrets/strava:/data/.config/strava
       # Garmin Connect session (gitignored). Create via docs/garmin.md / make garmin-auth
-      - ./secrets/garmin:/zeroclaw-data/.config/garmin
+      - ./secrets/garmin:/data/.config/garmin
       # YouTube Music browser headers (gitignored). Create via docs/ytmusic.md / make ytmusic-auth
-      - ./secrets/ytmusic:/zeroclaw-data/.config/ytmusic
-    tmpfs:
-      - /zeroclaw-scratch:mode=1777
-      - /zeroclaw-data/.config/gws:uid=${ZEROCLAW_UID:-1000},gid=${ZEROCLAW_GID:-1000},mode=0700
-    mem_limit: 2g
+      - ./secrets/ytmusic:/data/.config/ytmusic
+    mem_limit: 1g
     cpus: 4.0
-    mem_reservation: 256m
+    mem_reservation: 128m
     healthcheck:
-      test: ["CMD", "zeroclaw", "status", "--format=exit-code"]
+      # Exec form + full path — distroless has no shell (never CMD-SHELL).
+      test: ["CMD", "/usr/local/bin/gantry", "status"]
       interval: 60s
       timeout: 10s
       retries: 3

@@ -1,17 +1,13 @@
-# Thin ZeroClaw: keep the upstream distroless image, add only the extra tool binaries.
-# Upstream :latest is gcr.io/distroless/cc-debian13 (glibc). gws gnu builds need GLIBC >= 2.39,
-# so the fetch stage must be Debian 13+ (trixie), not bookworm/Alpine. Tool MCPs are static
-# (zero-CGO) Go binaries, so they run on distroless fine.
-#
-# Recent ZeroClaw fails agent init if no shell is on PATH (`runtime.shell "sh" was not
-# found`). Distroless has none; upstream `:debian` is bookworm (too old for gws), so we
-# drop in a static busybox as /bin/sh instead of switching the whole base image.
+# tim on ai-gantry: distroless/static + the gantry binary + static Go MCP tool binaries.
+# gantry is a static Go binary (CGO off) and never needs /bin/sh, so the busybox
+# shim and glibc base from the ZeroClaw era are gone. Every MCP child must be a
+# static binary too — there is no libc or shell in the final image.
 #
 # Build:  docker compose build
 # Auth:   docs/google-workspace.md · docs/strava.md · docs/garmin.md · docs/web-search.md · docs/cast.md · docs/ytmusic.md
 
-ARG ZEROCLAW_BASE=ghcr.io/zeroclaw-labs/zeroclaw:latest
-ARG GWS_VERSION=v0.22.5
+# shotah/ai-gantry release (the runtime). Override via GANTRY_VERSION.
+ARG GANTRY_VERSION=v0.0.1
 ARG STRAVA_MCP_VERSION=v1.2.0
 # shotah/go-garmin release (DI auth + MCP). Override via GARMIN_MCP_VERSION.
 ARG GARMIN_MCP_VERSION=v0.1.0
@@ -25,35 +21,25 @@ ARG MCP_BEAM_VERSION=latest
 ARG YOUTUBE_GO_MCP_VERSION=latest
 ARG TOOLS_CACHEBUST=0
 
-# --- static /bin/sh for distroless (agent init + shell tool) -------------------
-FROM debian:trixie-slim AS shell
-RUN apt-get update \
- && apt-get install -y --no-install-recommends busybox-static \
- && rm -rf /var/lib/apt/lists/* \
- && mkdir -p /out/bin \
- && cp /bin/busybox /out/bin/busybox \
- && ln -sf busybox /out/bin/sh \
- && /out/bin/sh -c 'echo ok'
-
-# --- fetch gws (trixie/glibc 2.41 — matches distroless/cc-debian13) ------------
-FROM debian:trixie-slim AS gws
-ARG GWS_VERSION
+# --- fetch gantry (static Go; shotah/ai-gantry release) -----------------------
+FROM debian:trixie-slim AS gantry
+ARG GANTRY_VERSION
 ARG TARGETARCH
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl \
  && rm -rf /var/lib/apt/lists/* \
  && case "${TARGETARCH}" in \
-      amd64) GWS_ARCH=x86_64-unknown-linux-gnu ;; \
-      arm64) GWS_ARCH=aarch64-unknown-linux-gnu ;; \
+      amd64|arm64) GANTRY_ARCH="linux_${TARGETARCH}" ;; \
       *) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
     esac \
+ && V="${GANTRY_VERSION#v}" \
  && curl -fsSL \
-      "https://github.com/googleworkspace/cli/releases/download/${GWS_VERSION}/google-workspace-cli-${GWS_ARCH}.tar.gz" \
-      -o /tmp/gws.tar.gz \
- && tar -xzf /tmp/gws.tar.gz -C /tmp \
- && install -m 0755 /tmp/gws /gws \
- && /gws --version
+      "https://github.com/shotah/ai-gantry/releases/download/${GANTRY_VERSION}/gantry_${V}_${GANTRY_ARCH}.tar.gz" \
+      -o /tmp/gantry.tar.gz \
+ && tar -xzf /tmp/gantry.tar.gz -C /tmp \
+ && install -m 0755 /tmp/gantry /gantry \
+ && /gantry version
 
 # --- build Google Workspace MCP (static Go; magks) ---------------------------
 FROM golang:1.25-bookworm AS google-workspace-mcp
@@ -179,15 +165,18 @@ RUN apt-get update \
  && install -m 0755 /tmp/youtube-go-mcp /youtube-go-mcp \
  && /youtube-go-mcp --version
 
-# --- runtime: upstream distroless + shell + tool binaries ---------------------
-FROM ${ZEROCLAW_BASE}
-# busybox-static: satisfies ZeroClaw runtime.shell without pulling in a full OS.
-COPY --from=shell /out/bin/busybox /bin/busybox
-COPY --from=shell /out/bin/sh /bin/sh
-COPY --from=gws /gws /usr/local/bin/gws
+# --- runtime: distroless/static + gantry + tool binaries ----------------------
+# ca-certs + tzdata included; no shell, no libc. Healthchecks must be exec form.
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY --from=gantry /gantry /usr/local/bin/gantry
 COPY --from=google-workspace-mcp /google-workspace-mcp-go /usr/local/bin/google-workspace-mcp-go
 COPY --from=strava /strava-mcp /usr/local/bin/strava-mcp
 COPY --from=garmin /garmin /usr/local/bin/garmin
 COPY --from=gemini-search /mcp-gemini-google-search /usr/local/bin/mcp-gemini-google-search
 COPY --from=mcp-beam /mcp-beam /usr/local/bin/mcp-beam
 COPY --from=youtube-go-mcp /youtube-go-mcp /usr/local/bin/youtube-go-mcp
+
+WORKDIR /data
+ENTRYPOINT ["/usr/local/bin/gantry"]
+CMD ["run"]

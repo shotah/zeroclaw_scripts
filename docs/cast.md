@@ -3,7 +3,7 @@
 Give Tim local control of Chromecast / Nest / Cast-enabled speakers and TVs
 (plus DLNA/UPnP renderers) via [mcp-beam](https://github.com/shotah/mcp-beam)
 — a **static Go** MCP server built on [go2tv](https://github.com/alexballas/go2tv).
-No API keys, no cloud registration. ZeroClaw launches the binary over stdio
+No API keys, no cloud registration. gantry launches the binary over stdio
 (same pattern as `strava-mcp` / `garmin` / `youtube-go-mcp`).
 
 Build source: [shotah/mcp-beam](https://github.com/shotah/mcp-beam) (fork of
@@ -12,11 +12,11 @@ Build source: [shotah/mcp-beam](https://github.com/shotah/mcp-beam) (fork of
 
 ```mermaid
 flowchart LR
-  ZC[zeroclaw daemon] -->|MCP stdio| MB[mcp-beam]
+  GN[gantry daemon] -->|MCP stdio| MB[mcp-beam]
   MB -->|mDNS / SSDP| LAN[Home Wi‑Fi]
   MB -->|castv2 / DLNA| DEV[Nest / Chromecast / DLNA]
-  YM[youtube-go-mcp] -->|videoId| ZC
-  ZC -->|beam_youtube_video| MB
+  YM[youtube-go-mcp] -->|videoId| GN
+  GN -->|beam_youtube_video| MB
 ```
 
 **No secrets.** Nothing under `secrets/` — discovery and control are entirely
@@ -34,8 +34,8 @@ local.
 
 ## What Tim can do
 
-`mcp-beam` exposes 10 tools (prefixed `cast__…` in ZeroClaw because the server
-name is `cast`):
+`mcp-beam` exposes 10 tools (prefixed `cast__…` because the server name in
+`mcp.toml` is `cast`):
 
 | Ask | Tool |
 |---|---|
@@ -101,9 +101,8 @@ Set `NETWORK_MODE` in `.env` so the container shares the host network stack
 NETWORK_MODE=host
 ```
 
-Default is `bridge` (fine without Cast / on Docker Desktop). With `host`, the
-`ports:` mapping is ignored; the gateway still binds host `:42617` via config
-(`host = "0.0.0.0"`).
+Default is `bridge` (fine without Cast / on Docker Desktop). gantry opens no
+ports either way — `host` only exists so mDNS/SSDP discovery can reach the LAN.
 
 **Linux home server:** use `host`. **Docker Desktop (Windows/Mac):** leave
 `bridge` — prefer deploying Cast on the Ubuntu box.
@@ -114,7 +113,6 @@ Default is `bridge` (fine without Cast / on Docker Desktop). With `host`, the
 
 ```bash
 # In .env: NETWORK_MODE=host
-make sync-config     # if you refreshed from config.toml.example
 make build           # bakes mcp-beam into the image
 make up              # or make remote-deploy
 ```
@@ -125,24 +123,13 @@ Ensure the server’s `.env` has `NETWORK_MODE=host` before `remote-up`.
 
 ## Config wiring
 
-`config/config.toml.example` already has:
+`mcp.toml` already has (listed = granted):
 
 ```toml
-mcp_bundles = ["google-workspace", "strava", "garmin", "google-search", "cast"]
-
-[[mcp.servers]]
-name = "cast"
-transport = "stdio"
+[[server]]
+name    = "cast"
 command = "mcp-beam"
-
-[mcp_bundles.cast]
-servers = ["cast"]
 ```
-
-If you already have a live `config/config.toml`, merge those blocks in —
-`make sync-config` only patches model / Telegram peers, not MCP.
-
-Keep `[mcp] deferred_loading = false` (same Flash lesson as Strava/Garmin).
 
 ---
 
@@ -150,8 +137,8 @@ Keep `[mcp] deferred_loading = false` (same Flash lesson as Strava/Garmin).
 
 ```bash
 make build
-docker compose run --rm --entrypoint mcp-beam zeroclaw --version
-docker compose run --rm --entrypoint mcp-beam zeroclaw --self-test
+docker compose run --rm --entrypoint mcp-beam gantry --version
+docker compose run --rm --entrypoint mcp-beam gantry --self-test
 ```
 
 With host networking enabled and devices on the LAN, ask Tim over Telegram:
@@ -167,8 +154,8 @@ With host networking enabled and devices on the LAN, ask Tim over Telegram:
 
 | Symptom | Likely fix |
 |---|---|
-| Tim doesn’t see Cast tools | Grant bundle: `"cast"` in `agents.main.mcp_bundles` + `[mcp_bundles.cast]`; `[mcp] enabled = true`, `deferred_loading = false`; rebuild so `mcp-beam` is in the image |
-| `mcp-beam: not found` | `make build` / `make remote-deploy` |
+| Tim doesn’t see Cast tools | Check the `[[server]]` entry in `mcp.toml`; rebuild so `mcp-beam` is in the image |
+| Boot fails with `mcp: boot server "cast"` | `make build` / `make remote-deploy`; check `make logs` for the tool's stderr |
 | `list_local_hardware` returns empty / missing Nest Max | Set `NETWORK_MODE=host` in `.env`; same subnet/VLAN; use `timeout_ms: 10000` + `include_unreachable: true` (see Discovery defaults); retry a few seconds later; if Chrome/Google Home also can’t see it, it’s network/mDNS |
 | Nest connects but no music | Don’t use `beam_media` with a YouTube/Music watch URL — use `beam_youtube_video` with the bare `video_id` from ytmusic |
 | `FFMPEG_NOT_FOUND` | Use a direct-playable URL / `transcode: "never"` / `beam_youtube_video`, or add ffmpeg later (not in distroless by default) |

@@ -4,13 +4,13 @@ Tim talks to Google through a **compiled Go MCP binary**:
 [`magks/google-workspace-mcp-go`](https://github.com/magks/google-workspace-mcp-go)
 (stdio, static build, baked into the image like Strava/Garmin).
 
-The built-in ZeroClaw `google_workspace` tool (raw `gws`) is **disabled** —
-it rejects camelCase methods such as `batchUpdate`, so Docs writes fail before
-they reach Google. Prefer this MCP.
+gantry has no built-in Google tooling — this MCP **is** the Workspace
+integration. (The old `gws` CLI is gone from the image: it needs glibc and the
+runtime is now distroless/static.)
 
 ```mermaid
 flowchart LR
-  ZC[zeroclaw daemon] -->|MCP stdio| GW[google-workspace-mcp-go]
+  GN[gantry daemon] -->|MCP stdio| GW[google-workspace-mcp-go]
   GW -->|OAuth2 HTTPS| API[Google APIs]
   GW --- TOK[("secrets/google-mcp/credentials")]
 ```
@@ -29,7 +29,7 @@ Config loads `--tools gmail drive calendar docs sheets tasks contacts` with
 | “Update the Seattle itinerary doc” | `modify_doc_text` / `find_and_replace_doc` |
 | “Create a sheet of …” | `create_spreadsheet` / `modify_sheet_values` |
 
-Bump to `--tool-tier extended` or `complete` in `config.toml` if you need
+Bump to `--tool-tier extended` or `complete` in `mcp.toml` if you need
 rarer ops (then recreate the container).
 
 ---
@@ -94,24 +94,21 @@ revokes the refresh token (or Testing-mode expiry hits), re-run
 
 ## 3. Config already wired
 
+`mcp.toml` (listed = granted; tools land as `google-workspace__<tool>`):
+
 ```toml
-[google_workspace]
-enabled = false
-
-[[mcp.servers]]
-name = "google-workspace"
-transport = "stdio"
+[[server]]
+name    = "google-workspace"
 command = "google-workspace-mcp-go"
-args = ["--tools", "gmail drive calendar docs sheets tasks contacts", "--tool-tier", "core"]
-
-[mcp_bundles.google-workspace]
-servers = ["google-workspace"]
-
-[agents.main]
-mcp_bundles = ["google-workspace", "strava", "garmin", "google-search"]
+args    = [
+  "--tools",
+  "gmail drive calendar docs sheets tasks contacts",
+  "--tool-tier",
+  "core",
+]
 ```
 
-Compose mounts `./secrets/google-mcp` → `/zeroclaw-data/.config/google-mcp` and
+Compose mounts `./secrets/google-mcp` → `/data/.config/google-mcp` and
 sets `WORKSPACE_MCP_CREDENTIALS_DIR`, `GOOGLE_OAUTH_*`, `USER_GOOGLE_EMAIL`.
 
 ---
@@ -141,8 +138,8 @@ Prefer **`make google-auth`** for new setups (no local gws dependency).
 - **No `refresh_token` in response** — revoke prior grant at
   [Google Account permissions](https://myaccount.google.com/permissions), then
   `make google-auth` again (`prompt=consent` is already set).
-- **Tim ignores Workspace MCP** — `mcp_bundles` must include
-  `google-workspace`; `[mcp] deferred_loading = false`.
+- **Tim ignores Workspace MCP** — check the `[[server]]` entry in `mcp.toml`
+  and rebuild; a failing server fails the boot loudly (`make logs`).
 - **Too many tools / context bloat** — keep `--tool-tier core`; drop unused
   services from `--tools`.
-- **Permission denied on secrets/** — readable by `ZEROCLAW_UID` on the server.
+- **Permission denied on secrets/** — readable by `GANTRY_UID` on the server.

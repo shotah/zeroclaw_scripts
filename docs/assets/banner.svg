@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="320" viewBox="0 0 1200 320" role="img" aria-label="tim - a lean, self-hosted assistant on ZeroClaw (Gemini and Telegram, dockerized)">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="320" viewBox="0 0 1200 320" role="img" aria-label="tim - a lean, self-hosted assistant on ai-gantry (Gemini and Telegram, dockerized)">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0d1117"/>
@@ -76,7 +76,7 @@
   <!-- ===== wordmark ===== -->
   <g transform="translate(430,0)" font-family="'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
     <text x="0" y="128" font-size="84" font-weight="700" fill="#f0f6fc" letter-spacing="1">tim<tspan fill="url(#accent)">_</tspan></text>
-    <text x="4" y="170" font-size="24" font-weight="500" fill="#8b949e">a lean, self-hosted assistant on ZeroClaw</text>
+    <text x="4" y="170" font-size="24" font-weight="500" fill="#8b949e">a lean, self-hosted assistant on ai-gantry</text>
 
     <!-- capability chips -->
     <g font-size="20" font-weight="600">

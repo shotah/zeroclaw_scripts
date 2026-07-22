@@ -3,8 +3,8 @@
 Give Tim your Garmin-native recovery data — sleep, Index scale weigh-ins, Body
 Battery / HRV, training readiness — via the
 [go-garmin](https://github.com/shotah/go-garmin) CLI’s built-in MCP server
-(`garmin mcp`). A static Go binary is baked into the image (like `gws` /
-`strava-mcp`); ZeroClaw launches it over stdio.
+(`garmin mcp`). A static Go binary is baked into the image (like
+`strava-mcp`); gantry launches it over stdio.
 
 **Keep Strava** for the activity feed if you want; Garmin fills the gaps Strava
 never had. Climbing grades / falls / sends come from typed splits + split
@@ -16,7 +16,7 @@ also [docs/strava.md](strava.md).
 
 ```mermaid
 flowchart LR
-  ZC[zeroclaw daemon] -->|MCP stdio| GM["garmin mcp"]
+  GN[gantry daemon] -->|MCP stdio| GM["garmin mcp"]
   GM -->|session HTTPS| GC[Garmin Connect]
   GM --- TOK[("secrets/garmin/session.json")]
 ```
@@ -29,8 +29,8 @@ Session path (go-garmin `session.go`):
 
 ```text
 $XDG_CONFIG_HOME/garmin/session.json
-# with HOME=/zeroclaw-data in compose →
-/zeroclaw-data/.config/garmin/session.json
+# with HOME=/data in compose →
+/data/.config/garmin/session.json
 ```
 
 > Upstream README mentions `garmin login -email=… -password=…`, but current
@@ -40,8 +40,8 @@ $XDG_CONFIG_HOME/garmin/session.json
 
 ## What Tim can do
 
-Curated tools are auto-approved in `config/config.toml.example` (prefixed
-`garmin__…`):
+Tools reach the model prefixed as `garmin__…` (no approval gates in gantry —
+listed in `mcp.toml` = granted):
 
 | Ask | Tool |
 |---|---|
@@ -73,12 +73,12 @@ make garmin-auth
 That builds the image if needed, then:
 
 ```bash
-docker compose run --rm --build -it --entrypoint garmin zeroclaw login
+docker compose run --rm --build -it --entrypoint garmin gantry login
 ```
 
 1. Enter Garmin Connect **email**, **password**, and **MFA** if prompted.
 2. On success: `Login successful.` and `secrets/garmin/session.json` on the host
-   (mounted at `/zeroclaw-data/.config/garmin`).
+   (mounted at `/data/.config/garmin`).
 
 No published ports (unlike Strava’s OAuth callback). Re-run if the session
 expires — `make garmin-auth` deletes any existing `session.json` first so a
@@ -99,7 +99,6 @@ make garmin-sync
 ## 3. Deploy / restart
 
 ```bash
-make sync-config     # if you refreshed from config.toml.example
 make build           # bakes garmin into the image
 make up              # or make remote-deploy
 make garmin-sync     # only when you intentionally want the server to get this session
@@ -109,36 +108,22 @@ make garmin-sync     # only when you intentionally want the server to get this s
 
 ## Config wiring
 
-`config/config.toml.example` already has:
+`mcp.toml` already has (listed = granted; no bundles or approval lists):
 
 ```toml
-mcp_bundles = ["strava", "garmin"]
-
-[[mcp.servers]]
-name = "garmin"
-transport = "stdio"
+[[server]]
+name    = "garmin"
 command = "garmin"
-args = ["mcp"]
-
-[mcp_bundles.garmin]
-servers = ["garmin"]
+args    = ["mcp"]
 ```
-
-Plus `garmin__get_sleep`, `garmin__get_weight`, … in
-`risk_profiles.default.auto_approve`. Keep `[mcp] deferred_loading = false`
-(same Flash lesson as Strava).
-
-If you already have a live `config/config.toml`, merge those blocks in (or
-re-copy from the example carefully) — `make sync-config` only patches model /
-Telegram peers, not MCP.
 
 Compose mounts:
 
 ```yaml
-- ./secrets/garmin:/zeroclaw-data/.config/garmin
+- ./secrets/garmin:/data/.config/garmin
 ```
 
-`HOME=/zeroclaw-data` is already set, so the CLI finds the session with no
+`HOME=/data` is already set, so the CLI finds the session with no
 extra env vars.
 
 ---
@@ -147,11 +132,11 @@ extra env vars.
 
 ```bash
 make build
-docker compose run --rm --entrypoint garmin zeroclaw --help
+docker compose run --rm --entrypoint garmin gantry --help
 
 # After garmin-auth:
-docker compose run --rm --entrypoint garmin zeroclaw sleep
-docker compose run --rm --entrypoint garmin zeroclaw weight daily
+docker compose run --rm --entrypoint garmin gantry sleep
+docker compose run --rm --entrypoint garmin gantry weight daily
 ```
 
 Then ask Tim over Telegram: “How did I sleep last night?” / “What’s my latest
@@ -173,10 +158,9 @@ endpoint). Bouldering often shows attempts via `CLIMB_ATTEMPTED` status instead.
 
 | Symptom | Likely fix |
 |---|---|
-| Tim doesn’t see Garmin tools | Grant bundle: `mcp_bundles = ["strava", "garmin"]` + `[mcp_bundles.garmin]`; rebuild so `garmin` is in the image |
-| `garmin: not found` | `make build` / `make remote-deploy` |
+| Tim doesn’t see Garmin tools | Check the `[[server]]` entry in `mcp.toml`; rebuild so `garmin` is in the image |
+| Boot fails with `mcp: boot server "garmin"` | `make build` / `make remote-deploy`; check `make logs` for the tool's stderr |
 | `not logged in` | `make garmin-auth` (auto `garmin-sync` if `DEPLOY_HOST` set), or `make garmin-sync` |
-| Every call asks for approval | Add exact `garmin__<tool>` names to `auto_approve` |
 | Auth / 401 after weeks | Session expired — re-run `make garmin-auth` (clears stale `session.json` first) |
 | Rate limited (429) | Unofficial Connect API — ask for summaries, don’t poll |
 
@@ -220,7 +204,6 @@ mobile SSO + **DI** tokens (`diauth…/di-oauth2-service/oauth/token`), same ide
 
 - [x] Climbing typed-splits / grades / falls (go-garmin MCP)
 - [ ] Decide whether to drop Strava once Garmin activity coverage feels enough
-- [ ] Expand `auto_approve` if you want workouts / biometric tools
 
 ---
 

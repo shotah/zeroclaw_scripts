@@ -1,14 +1,15 @@
-# Models (chat, search, embeddings)
+# Models (chat + search)
 
-Tim uses **three** model-ish surfaces. Only the first is “which brain answers Telegram.”
+Tim uses **two** model surfaces. Only the first is "which brain answers Telegram."
 
 | Surface | What it does | Default today | Swappable? |
-|---|---|---|---|
-| **Chat** (`agents.main.model_provider`) | Replies, tool planning | Gemini `gemini-3.5-flash` | Yes — Gemini family or xAI/Grok |
+| --- | --- | --- | --- |
+| **Chat** (`LLM_*` env) | Replies, tool planning, memory consolidation, session summaries | Gemini `gemini-3.5-flash` | Yes — any OpenAI-compatible endpoint |
 | **Web search MCP** | Gemini Grounding + Google Search | Same `GEMINI_API_KEY` / `GEMINI_MODEL` | Needs a Gemini key (see [web-search.md](web-search.md)) |
-| **Memory embeddings** | Hybrid SQLite vector recall | `gemini-embedding-001` | Separate from chat; still Gemini in this stack |
 
-Upstream provider docs: [ZeroClaw providers](https://github.com/zeroclaw-labs/zeroclaw/blob/master/docs/book/src/providers/overview.md).
+There are **no embeddings** anymore: gantry's memory is structured SQLite +
+FTS5 keyword search, so the ZeroClaw-era `gemini-embedding-001` /
+`OPENAI_API_KEY` wiring is gone.
 
 ---
 
@@ -16,15 +17,31 @@ Upstream provider docs: [ZeroClaw providers](https://github.com/zeroclaw-labs/ze
 
 ```mermaid
 flowchart LR
-  TG[Telegram] --> Chat[Chat provider]
+  TG[Telegram] --> Chat[Chat provider - LLM_*]
   Chat --> Tools[MCP tools]
   Tools --> Search[google-search MCP]
   Search --> GeminiAPI[Gemini API]
-  Chat --> Mem[(brain.db)]
-  Mem --> Embed[Embeddings API]
+  Chat --> Mem[(gantry.db - FTS5, no embeddings)]
 ```
 
-Changing **chat** does not automatically change search or embeddings.
+Changing **chat** does not automatically change search.
+
+---
+
+## How the provider works
+
+gantry has exactly **one provider implementation**: an OpenAI-compatible chat
+client. Identity is three env vars — there is no provider registry, no
+config file, no alias table:
+
+```env
+LLM_BASE_URL=...   # any OpenAI-compatible endpoint
+LLM_API_KEY=...
+LLM_MODEL=...
+```
+
+Compose defaults these from the familiar Gemini keys, so a plain Gemini setup
+only needs `GEMINI_API_KEY`.
 
 ---
 
@@ -33,35 +50,22 @@ Changing **chat** does not automatically change search or embeddings.
 ### Env
 
 ```env
-GEMINI_API_KEY=...          # required today (chat + search + embeddings)
+GEMINI_API_KEY=...          # chat + search MCP
 GEMINI_MODEL=gemini-3.5-flash
 ```
 
-`make sync-config` writes `GEMINI_MODEL` into:
+Compose maps those onto gantry:
 
-```toml
-[providers.models.gemini.default]
-model = "gemini-3.5-flash"
-```
-
-Compose injects the API key:
-
-```text
-ZEROCLAW_providers__models__gemini__default__api_key
-ZEROCLAW_providers__models__gemini__default__model
-```
-
-Agent points at Gemini:
-
-```toml
-[agents.main]
-model_provider = "gemini.default"
+```yaml
+LLM_BASE_URL: https://generativelanguage.googleapis.com/v1beta/openai
+LLM_API_KEY: ${GEMINI_API_KEY}
+LLM_MODEL: ${GEMINI_MODEL}
 ```
 
 ### Common Gemini chat IDs
 
 | Model id | Role |
-|---|---|
+| --- | --- |
 | `gemini-3.5-flash` | **Default** — cheap / fast for tool-heavy Telegram |
 | `gemini-3.5-pro` | More depth when Flash is too thin |
 
@@ -73,115 +77,83 @@ Confirm current ids in [Google AI Studio](https://aistudio.google.com/) / Gemini
 2. Apply:
 
 ```bash
-make sync-config
 make remote-sync && make remote-restart
-# local: make sync-config && make restart
+# local: make restart
 ```
 
-Search MCP also reads `GEMINI_MODEL` from the container env (same value). If you want a cheap chat model but a different search model, that needs a compose split — not wired yet.
+The search MCP also reads `GEMINI_MODEL` from the container env (same value).
 
 ---
 
 ## xAI / Grok (chat swap)
 
-ZeroClaw supports xAI as an OpenAI-compatible provider. **Chat can move to Grok while Gemini stays for search + embeddings.**
+Chat can move to Grok while Gemini stays for search — override the three
+`LLM_*` vars and you're done. No config file, no compose edits.
 
 Get a key: [console.x.ai](https://console.x.ai/) → API keys.
+
+**`.env`:**
+
+```env
+LLM_BASE_URL=https://api.x.ai/v1
+LLM_API_KEY=xai-...
+LLM_MODEL=grok-4.3
+
+# Keep Gemini for the search MCP (still required in this stack)
+GEMINI_API_KEY=...
+GEMINI_MODEL=gemini-3.5-flash
+```
+
+**Deploy:**
+
+```bash
+make remote-sync && make remote-restart
+# or local: make restart
+```
+
+**Verify:** ask Tim something trivial, then `/status` in Telegram (shows the
+active model) or check the JSON logs (`make remote-logs`).
 
 ### Suggested chat models
 
 Check live ids/pricing: [xAI models](https://docs.x.ai/developers/models). Names change; prefer what the console lists today.
 
 | Model id (examples) | Notes |
-|---|---|
+| --- | --- |
 | `grok-4.3` | Solid general-purpose default for Tim-sized agent loops |
 | `grok-4.5` | Higher capability / cost when you want more depth |
-| `grok-build-0.1` | Coding-oriented; usually overkill for Telegram+MCP |
 
-Retired slugs often **redirect** and bill at the new model’s rate — pin a current id, don’t assume an old “cheap” name stays cheap.
+Retired slugs often **redirect** and bill at the new model's rate — pin a current id, don't assume an old "cheap" name stays cheap.
 
-### Config changes (chat → Grok)
-
-**1. `.env`**
-
-```env
-XAI_API_KEY=xai-...
-XAI_MODEL=grok-4.3
-
-# Keep Gemini for search + embeddings (still required in this stack)
-GEMINI_API_KEY=...
-GEMINI_MODEL=gemini-3.5-flash
-```
-
-**2. `config/config.toml.example`** (then `make sync-config`)
-
-Add / keep an xAI alias and point the agent at it:
-
-```toml
-[providers.models.xai.default]
-model = "grok-4.3"
-# api_key from compose env — do not commit secrets
-
-[providers.models.gemini.default]
-model = "gemini-3.5-flash"
-# still used indirectly if you leave search/embeddings on Gemini
-
-[agents.main]
-model_provider = "xai.default"
-```
-
-**3. `docker-compose.yml` environment**
-
-```yaml
-ZEROCLAW_providers__models__xai__default__api_key: ${XAI_API_KEY:-}
-ZEROCLAW_providers__models__xai__default__model: ${XAI_MODEL:-grok-4.3}
-# keep existing GEMINI_* / OPENAI_API_KEY=GEMINI_API_KEY for search + embeddings
-```
-
-If ZeroClaw’s `xai` family needs an explicit URI on your image version:
-
-```toml
-[providers.models.xai.default]
-uri = "https://api.x.ai/v1"
-model = "grok-4.3"
-```
-
-**4. Deploy**
-
-```bash
-make sync-config
-make remote-sync && make remote-up
-# or local: make sync-config && make up
-```
-
-**5. Verify**
-
-Ask Tim something trivial, then check logs for the provider/model (`make remote-logs`). Dashboard health / traces should show `xai` (or the model id), not `gemini-3.5-flash`, for chat turns.
+The same three-var swap works for **Ollama** or any local OpenAI-compatible
+server (`LLM_BASE_URL=http://host:11434/v1`).
 
 ### Switch back to Gemini chat
 
-1. Set `agents.main.model_provider = "gemini.default"` again
-2. Redeploy (`make sync-config` + restart/up)
-3. You can leave `XAI_API_KEY` in `.env` unused
+1. Comment out / remove the `LLM_*` overrides in `.env`
+2. Redeploy (`make remote-sync && make remote-restart`)
 
 ---
 
 ## What does *not* move with chat
 
 | Piece | Stays on |
-|---|---|
+| --- | --- |
 | [Google Search MCP](web-search.md) | Gemini (`GEMINI_API_KEY`) |
-| Hybrid memory embeddings | Gemini `gemini-embedding-001` via OpenAI-compatible URL in `config.toml` |
 | Google Workspace / Strava / Garmin / Cast / YT Music MCPs | No LLM of their own — they are tools the **chat** model calls |
 
-Full “no Gemini key at all” means replacing search + embeddings, not only `model_provider`.
+Full "no Gemini key at all" means replacing search, not only chat.
 
 ---
 
 ## Cost notes
 
-- Tim’s Telegram profile keeps **large** context (history pruning up to ~128k tokens, fat MCP schemas). Cheap-per-token still adds up on tool-heavy turns.
-- Flash vs Pro (Gemini) and 4.3 vs 4.5 (Grok) is usually a bigger bill lever than shaving a few cents on the sticker price.
+- Tim keeps a **large** bounded context (up to ~128k estimated tokens plus fat
+  MCP schemas). Cheap-per-token still adds up on tool-heavy turns.
+- Flash vs Pro (Gemini) and 4.3 vs 4.5 (Grok) is usually a bigger bill lever
+  than shaving a few cents on the sticker price.
+- Memory consolidation and session summaries reuse the **chat** model — another
+  reason the cheap Flash default is right.
 - Compare current rates yourself:
   - [Gemini API pricing](https://ai.google.dev/pricing)
   - [xAI models / pricing](https://docs.x.ai/developers/models)
@@ -190,11 +162,14 @@ Full “no Gemini key at all” means replacing search + embeddings, not only `m
 
 ## Safety / identity (any model)
 
-Cheaper models do **not** remove hallucination risk. Tim’s hybrid memory can **auto-save** invented facts (including wrong emails). After any provider swap:
+Cheaper models do **not** remove hallucination risk. gantry's memory writes are
+deliberate (`memory_store` — no auto-save), which removes the worst ZeroClaw
+failure mode (auto-saved wrong emails), but the model can still *store* a wrong
+fact on purpose. After any provider swap:
 
-1. Prefer pinning real identity in `USER_GOOGLE_EMAIL` / workspace auth — don’t let the model invent it.
+1. Keep real identity pinned in `persona/USER.md` / `USER_GOOGLE_EMAIL` — persona outranks memory.
 2. Use Telegram `/new` if a session went weird.
-3. Treat long-term memory as untrusted until you’ve audited it.
+3. Audit memory when in doubt: `make shell` → `sqlite3 gantry.db 'SELECT * FROM memory;'`.
 
 ---
 
@@ -203,13 +178,10 @@ Cheaper models do **not** remove hallucination risk. Tim’s hybrid memory can *
 **Gemini model bump only**
 
 - [ ] `GEMINI_MODEL` in `.env`
-- [ ] `make sync-config` + restart/deploy
+- [ ] restart / redeploy
 
 **Chat → Grok**
 
-- [ ] `XAI_API_KEY` (+ optional `XAI_MODEL`) in `.env`
-- [ ] `[providers.models.xai.default]` in config
-- [ ] `agents.main.model_provider = "xai.default"`
-- [ ] Compose env for xAI api_key/model
-- [ ] Keep `GEMINI_API_KEY` for search + embeddings
-- [ ] Deploy and confirm chat model in logs
+- [ ] `LLM_BASE_URL` + `LLM_API_KEY` + `LLM_MODEL` in `.env`
+- [ ] Keep `GEMINI_API_KEY` for search
+- [ ] restart / redeploy, then `/status` to verify

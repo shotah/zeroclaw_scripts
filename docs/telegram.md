@@ -1,22 +1,8 @@
-# Telegram setup (ZeroClaw)
+# Telegram setup (ai-gantry)
 
-Telegram is the **default** messaging channel in this lean stack. ZeroClaw
-**long-polls** the Bot API — no inbound ports, no QR codes, no SMS.
-
-WhatsApp (friend / group) is optional: [docs/whatsapp.md](whatsapp.md).
-
-Full upstream notes: [ZeroClaw network deployment](https://github.com/zeroclaw-labs/zeroclaw/blob/master/docs/ops/network-deployment.md).
-
----
-
-## Why Telegram first (WhatsApp optional)
-
-| | Telegram bot | WhatsApp Web |
-|---|---|---|
-| Setup | BotFather token + peer allowlist | QR linked device |
-| Inbound port | None (polls) | None (WebSocket); Cloud API needs webhook |
-| Identity | Separate bot account | Linked phone number |
-| Footprint | Token in `.env` | Session DB under `config/` / `data/` |
+Telegram is the **only** chat channel in this stack (by design — one persona,
+one channel, one container). gantry **long-polls** the Bot API — no inbound
+ports, no QR codes, no pairing flow.
 
 ---
 
@@ -46,15 +32,13 @@ TELEGRAM_ALLOWED_USERS=123456789
 
 Multiple users: comma-separated IDs — `111,222,333`.
 
-`make sync-config` writes those IDs into ZeroClaw schema v3
-`[peer_groups.telegram_default].external_peers` (with `agents = ["main"]`)
-and injects `TELEGRAM_BOT_TOKEN` into `[channels.telegram.default].bot_token`
-(required by current ZeroClaw — env-only is not enough).
+That's the entire auth model: gantry answers listed IDs and ignores everyone
+else. An **empty allowlist fails boot** (fail-fast) — there is no "allow all"
+mode and no bind/pairing step.
 
 Then:
 
 ```bash
-make sync-config
 make up
 # or remote: make remote-deploy
 make logs
@@ -63,25 +47,16 @@ make logs
 ### 4. Talk to the bot
 
 Send a message in Telegram. Only IDs in `TELEGRAM_ALLOWED_USERS` are answered.
-
-If the bot still asks for operator approval after a fresh deploy:
-
-```bash
-make remote-bind
-# or: make remote-bind TG_USER=123456789
-```
-
-That runs `zeroclaw channel bind-telegram` and should also ensure the peer group
-lists agent `main`. Then message again.
+No approval step — if the allowlist is right, it just replies.
 
 ---
 
 ## In-chat commands
 
 | Command | What it does |
-|---|---|
-| `/new` | Clear **this sender’s** conversation history and start a fresh session |
-| `/model` / `/models` | Show or switch the model for this sender (upstream ZeroClaw) |
+| --- | --- |
+| `/new` | Clear **this sender's** conversation history and start a fresh session |
+| `/status` | Uptime, model, history size (estimated tokens), tool count |
 
 Use **`/new`** when Tim dumps huge JSON/transcripts, loops on the same tool error, or
 ignores a clear ask. That is usually a poisoned session, not a broken deploy —
@@ -89,34 +64,44 @@ reset and ask one concrete thing again.
 
 ---
 
-## Session size (`telegram_lean`)
+## Session bounds
 
-`config.toml` binds `agents.main` to `[runtime_profiles.telegram_lean]`:
+gantry keeps the prompt bounded with env knobs (defaults are sane; all in
+[ai-gantry §5.1](https://github.com/shotah/ai-gantry#51-environment-variables)):
 
-- Cap history (`max_history_messages = 200`)
-- Keep full tool payloads for recent turns (`keep_tool_context_turns = 4`)
-- Trim huge single tool results (Gmail/Calendar dumps; `max_tool_result_chars = 16000`)
-- History pruning up to ~128k tokens (`keep_recent = 24`)
-- Context compression when the prompt gets heavy (`threshold_ratio = 0.55`)
+- `HISTORY_MAX_MESSAGES=200` — hard message cap
+- `HISTORY_MAX_TOKENS=128000` — estimated (chars/4); oldest turns drop first
+- `TOOL_RESULT_MAX_CHARS=16000` — trims huge single tool results (Gmail dumps)
+- Tool results older than the last 4 turns collapse to a one-line stub
+- Trimmed turns fold into a rolling per-session **summary** via the same LLM
 
-Gemini 3.5’s ~1M window leaves headroom, but fat tool results still make answers
-worse without these caps. `/new` remains the hard **session** reset.
+Gemini 3.5's ~1M window leaves headroom, but fat tool results still make
+answers worse without these caps. `/new` remains the hard **session** reset.
+
+Streaming replies (Telegram edit-in-place) are opt-in: `STREAM_REPLIES=true`.
 
 ## Long-term memory
 
-ZeroClaw’s `[memory]` block (SQLite hybrid: vector + FTS5) persists under `./data`.
-Embeddings use Gemini (`gemini-embedding-001`) via the OpenAI-compatible endpoint;
-compose sets `OPENAI_API_KEY` from the same `GEMINI_API_KEY` as chat.
+gantry's memory is **structured SQLite** (typed rows + FTS5 keyword search —
+no embeddings) in `data/gantry.db`. See
+[ai-gantry docs/memory.md](https://github.com/shotah/ai-gantry/blob/main/docs/memory.md).
 
-- Facts you state are auto-saved and hydrated into later turns (`auto_hydrate`).
+- Storage is **deliberate**: Tim calls `memory_store` for confirmed facts;
+  nothing is auto-saved from chat. A background consolidation pass (default
+  every 30 min) promotes episodes into durable facts/insights.
 - `/new` clears the Telegram session only — long-term memory remains.
-- To wipe server memory intentionally, see [docs/deploy.md](deploy.md)
-  (`rm -rf data/data/*` then restart).
+- Memory is inspectable and correctable: `make shell` then
+  `sqlite3 gantry.db 'SELECT id, kind, subject, content FROM memory;'`,
+  or ask Tim to `memory_forget` the bad row.
+- Persona files always outrank memory — identity lives in `persona/USER.md`.
 
 ---
 
 ## Security
 
-- Keep `TELEGRAM_ALLOWED_USERS` non-empty — an empty allowlist may mean “allow all” depending on ZeroClaw version.
+- `TELEGRAM_ALLOWED_USERS` is required — boot fails without it, so there is no
+  accidentally-open bot.
 - Never commit `.env`.
 - Bot token = full control of that bot; rotate via BotFather if leaked.
+- No ports are opened by the container, ever — there is no gateway or
+  dashboard to protect.

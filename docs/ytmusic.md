@@ -3,18 +3,18 @@
 Give Tim real YouTube Music search and library reads via
 [youtube-go-mcp](https://github.com/shotah/youtube-go-mcp) — a **static Go** MCP
 server. Premium rides on your browser session (cookie headers), not a YouTube
-Data API key. ZeroClaw launches the binary over stdio.
+Data API key. gantry launches the binary over stdio.
 
 Upstream: [shotah/youtube-go-mcp](https://github.com/shotah/youtube-go-mcp) ·
 seeded from [raitonoberu/ytmusic](https://github.com/raitonoberu/ytmusic).
 
 ```mermaid
 flowchart LR
-  ZC[zeroclaw daemon] -->|MCP stdio| YM[youtube-go-mcp]
+  GN[gantry daemon] -->|MCP stdio| YM[youtube-go-mcp]
   YM -->|InnerTube| YTM[YouTube Music]
   YM --- HDR[("secrets/ytmusic/headers.json")]
-  YM -->|videoId| ZC
-  ZC -->|beam_youtube_video| MB[mcp-beam Cast]
+  YM -->|videoId| GN
+  GN -->|beam_youtube_video| MB[mcp-beam Cast]
 ```
 
 **Cast is separate.** This MCP returns `videoId` (+ watch URLs for reference).
@@ -26,7 +26,7 @@ pass Music/YouTube watch URLs to `beam_media`.
 
 ## What Tim can do
 
-Tools are prefixed `ytmusic__…` in ZeroClaw (server name `ytmusic`):
+Tools are prefixed `ytmusic__…` (server name `ytmusic` in `mcp.toml`):
 
 | Ask | Tool | Auth |
 |---|---|---|
@@ -55,7 +55,7 @@ Defaults to GitHub `latest` each build. Pin only to freeze:
 Compose always sets:
 
 ```text
-YTMUSIC_HEADERS_PATH=/zeroclaw-data/.config/ytmusic/headers.json
+YTMUSIC_HEADERS_PATH=/data/.config/ytmusic/headers.json
 ```
 
 ---
@@ -75,8 +75,8 @@ That runs `youtube-go-mcp auth` in a throwaway container and writes
 Manual equivalent (host binary or after `make build`):
 
 ```bash
-docker compose run --rm --build -it --entrypoint youtube-go-mcp zeroclaw \
-  auth --out /zeroclaw-data/.config/ytmusic/headers.json
+docker compose run --rm --build -it --entrypoint youtube-go-mcp gantry \
+  auth --out /data/.config/ytmusic/headers.json
 ```
 
 The CLI prompts for two values from DevTools → Network → a `browse` request →
@@ -86,7 +86,7 @@ The CLI prompts for two values from DevTools → Network → a `browse` request 
 Validate:
 
 ```bash
-docker compose run --rm --entrypoint youtube-go-mcp zeroclaw --self-test
+docker compose run --rm --entrypoint youtube-go-mcp gantry --self-test
 ```
 
 Search can work without headers; library / liked / history will not.
@@ -98,7 +98,6 @@ Re-run `make ytmusic-auth` when tools return session expired / HTTP 401–403.
 ## 3. Deploy / restart
 
 ```bash
-make sync-config     # if you refreshed from config.toml.example
 make build           # bakes youtube-go-mcp into the image
 make up              # or make remote-deploy
 make ytmusic-sync    # push headers when you mean to (not part of remote-deploy)
@@ -111,24 +110,13 @@ auto-runs **`make ytmusic-sync`** when `DEPLOY_HOST` is set.
 
 ## Config wiring
 
-`config/config.toml.example` already has:
+`mcp.toml` already has (listed = granted):
 
 ```toml
-mcp_bundles = […, "ytmusic"]
-
-[[mcp.servers]]
-name = "ytmusic"
-transport = "stdio"
+[[server]]
+name    = "ytmusic"
 command = "youtube-go-mcp"
-
-[mcp_bundles.ytmusic]
-servers = ["ytmusic"]
 ```
-
-If you already have a live `config/config.toml`, merge those blocks in —
-`make sync-config` only patches model / Telegram peers, not MCP.
-
-Keep `[mcp] deferred_loading = false`.
 
 ---
 
@@ -136,8 +124,8 @@ Keep `[mcp] deferred_loading = false`.
 
 ```bash
 make build
-docker compose run --rm --entrypoint youtube-go-mcp zeroclaw --version
-docker compose run --rm --entrypoint youtube-go-mcp zeroclaw --self-test
+docker compose run --rm --entrypoint youtube-go-mcp gantry --version
+docker compose run --rm --entrypoint youtube-go-mcp gantry --self-test
 ```
 
 Ask Tim over Telegram:
