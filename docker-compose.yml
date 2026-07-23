@@ -16,7 +16,7 @@ services:
         - STRAVA_MCP_VERSION
         - GARMIN_MCP_VERSION
         - GEMINI_SEARCH_MCP_REF
-        - GOOGLE_WORKSPACE_MCP_REF
+        - GOOGLE_WORKSPACE_MCP_VERSION
         - MCP_BEAM_VERSION
         - YOUTUBE_GO_MCP_VERSION
         - TOOLS_CACHEBUST
@@ -54,7 +54,7 @@ services:
       # Gemini Google Search MCP (zchee) — same key as chat.
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
-      # Google Workspace MCP (magks) — OAuth client + token dir (docs/google-workspace.md).
+      # Google Workspace MCP (shotah) — OAuth client + token dir (docs/google-workspace.md).
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
       USER_GOOGLE_EMAIL: ${USER_GOOGLE_EMAIL:-}

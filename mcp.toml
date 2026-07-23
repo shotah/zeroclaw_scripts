@@ -3,8 +3,10 @@
 # {server}__{tool}. Binaries are baked into the image by the Dockerfile; auth
 # material arrives via compose env + ./secrets mounts (see each doc).
 
-# Google Workspace (magks/google-workspace-mcp-go) — docs/google-workspace.md
-# core tier ≈ 45 tools; include services Tim uses day-to-day.
+# Google Workspace (shotah/google-workspace-mcp-go) — docs/google-workspace.md
+# complete tier + capability: full surface for listed services (delete_event,
+# inbox label/trash cleanup, filters, etc.). Defaults are already complete;
+# kept explicit so Tim's grant is obvious in review.
 [[server]]
 name = "google-workspace"
 command = "google-workspace-mcp-go"
@@ -12,7 +14,9 @@ args = [
   "--tools",
   "gmail drive calendar docs sheets tasks contacts",
   "--tool-tier",
-  "core",
+  "complete",
+  "--capability",
+  "complete",
 ]
 
 # Strava workouts (Stealinglight/StravaMCP) — docs/strava.md

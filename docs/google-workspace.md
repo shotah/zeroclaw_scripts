@@ -1,8 +1,9 @@
 # Google Workspace (Gmail / Calendar / Docs / Drive)
 
 Tim talks to Google through a **compiled Go MCP binary**:
-[`magks/google-workspace-mcp-go`](https://github.com/magks/google-workspace-mcp-go)
-(stdio, static build, baked into the image like Strava/Garmin).
+[`shotah/google-workspace-mcp-go`](https://github.com/shotah/google-workspace-mcp-go)
+(stdio, static build, baked into the image like Strava/Garmin). Fork of the
+unmaintained `magks` rewrite — we ship releases and keep the tool surface current.
 
 gantry has no built-in Google tooling — this MCP **is** the Workspace
 integration. (The old `gws` CLI is gone from the image: it needs glibc and the
@@ -17,20 +18,23 @@ flowchart LR
 
 ---
 
-## What Tim can do (core tier)
+## What Tim can do (complete tier)
 
 Config loads `--tools gmail drive calendar docs sheets tasks contacts` with
-`--tool-tier core` (~45 tools). Useful examples:
+`--tool-tier complete` and `--capability complete` (full surface for those
+services, including `delete_event`, Gmail label/trash cleanup, filters, etc.).
 
 | Ask | Tool (approx.) |
 |---|---|
 | “What’s unread?” | `search_gmail_messages` / `get_gmail_message_content` |
+| “Clean up my inbox / archive / trash” | `modify_gmail_message_labels` / `batch_modify_gmail_message_labels` |
 | “What’s on my calendar Friday?” | `get_events` |
+| “Delete the duplicate calendar hold” | `delete_event` |
 | “Update the Seattle itinerary doc” | `modify_doc_text` / `find_and_replace_doc` |
 | “Create a sheet of …” | `create_spreadsheet` / `modify_sheet_values` |
 
-Bump to `--tool-tier extended` or `complete` in `mcp.toml` if you need
-rarer ops (then recreate the container).
+Drop unused services from `--tools` in `mcp.toml` if context gets heavy (then
+recreate the container).
 
 ---
 
@@ -54,6 +58,10 @@ USER_GOOGLE_EMAIL=you@gmail.com
 > **Testing vs Production:** OAuth apps in **Testing** expire refresh tokens
 > after ~7 days. Move the consent screen to **Production** (or re-run
 > `make google-auth` weekly).
+
+> **Re-auth after this migration:** scopes now match the fork’s
+> `DefaultScopes` (adds presentations, chat, forms, Apps Script). Re-run
+> `make google-auth` so Tim gets a refresh token with the full grant.
 
 ---
 
@@ -104,12 +112,17 @@ args    = [
   "--tools",
   "gmail drive calendar docs sheets tasks contacts",
   "--tool-tier",
-  "core",
+  "complete",
+  "--capability",
+  "complete",
 ]
 ```
 
 Compose mounts `./secrets/google-mcp` → `/data/.config/google-mcp` and
 sets `WORKSPACE_MCP_CREDENTIALS_DIR`, `GOOGLE_OAUTH_*`, `USER_GOOGLE_EMAIL`.
+
+Image builds pull the GitHub **latest** release of
+`shotah/google-workspace-mcp-go` (override with `GOOGLE_WORKSPACE_MCP_VERSION`).
 
 ---
 
@@ -140,6 +153,6 @@ Prefer **`make google-auth`** for new setups (no local gws dependency).
   `make google-auth` again (`prompt=consent` is already set).
 - **Tim ignores Workspace MCP** — check the `[[server]]` entry in `mcp.toml`
   and rebuild; a failing server fails the boot loudly (`make logs`).
-- **Too many tools / context bloat** — keep `--tool-tier core`; drop unused
-  services from `--tools`.
+- **Too many tools / context bloat** — drop unused services from `--tools`, or
+  step `--tool-tier` down to `extended` / `core`.
 - **Permission denied on secrets/** — readable by `GANTRY_UID` on the server.

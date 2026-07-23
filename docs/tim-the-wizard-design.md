@@ -189,7 +189,7 @@ Timwiz writes absolute Windows paths:
 [[server]]
 name = "google-workspace"
 command = 'C:\Users\…\AppData\Local\TimTheWizard\bin\mcp\google-workspace-mcp-go.exe'
-args = ["--tools", "gmail drive calendar docs sheets tasks contacts", "--tool-tier", "core"]
+args = ["--tools", "gmail drive calendar docs sheets tasks contacts", "--tool-tier", "complete", "--capability", "complete"]
 
 [[server]]
 name = "garmin"

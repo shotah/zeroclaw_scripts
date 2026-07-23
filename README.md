@@ -222,8 +222,8 @@ Set in `.env` (copy from [`.env.example`](.env.example)). Secrets are never comm
 | `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` / `USER_GOOGLE_EMAIL` | — | Google Workspace MCP OAuth (see [docs/google-workspace.md](docs/google-workspace.md)) |
 | `GANTRY_VERSION` | — | shotah/ai-gantry release (`latest` default; pin `vX.Y.Z` to freeze) |
 | `GANTRY_IMAGE` | — | Local tag after build (default `gantry-tim:local`) |
-| `STRAVA_MCP_VERSION` / `GARMIN_MCP_VERSION` / `GEMINI_SEARCH_MCP_REF` / `GOOGLE_WORKSPACE_MCP_REF` | — | Tool build pins (defaults in `Dockerfile`) |
-| `MCP_BEAM_VERSION` / `YOUTUBE_GO_MCP_VERSION` | — | shotah tool releases (`latest` default; pin `vX.Y.Z` to freeze) |
+| `STRAVA_MCP_VERSION` / `GARMIN_MCP_VERSION` / `GEMINI_SEARCH_MCP_REF` | — | Tool build pins (defaults in `Dockerfile`) |
+| `GOOGLE_WORKSPACE_MCP_VERSION` / `MCP_BEAM_VERSION` / `YOUTUBE_GO_MCP_VERSION` | — | shotah tool releases (`latest` default; pin `vX.Y.Z` to freeze) |
 | `NETWORK_MODE` | Cast | `host` for Cast mDNS on Linux (default `bridge`) |
 | `GANTRY_UID` / `GANTRY_GID` | server | Match the server login user (`id -u` / `id -g`) |
 | `DEPLOY_HOST` / `DEPLOY_USER` / `DEPLOY_PATH` / `DEPLOY_SSH_PORT` / `DEPLOY_SSH_KEY` | remote | SSH deploy target (see [docs/deploy.md](docs/deploy.md)) |

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Interactive Google OAuth for magks/google-workspace-mcp-go credentials.
+"""Interactive Google OAuth for shotah/google-workspace-mcp-go credentials.
 
 Runs in a throwaway container (make google-auth). Listens on a fixed port,
 prints an auth URL, exchanges the code, and writes:
   $WORKSPACE_MCP_CREDENTIALS_DIR/<email>.json
 in the MCP on-disk format (same as start_google_auth).
+
+Scopes match auth.DefaultScopes in the Go binary.
 
 No gws CLI required.
 """
@@ -21,14 +23,19 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+# Keep in sync with github.com/shotah/google-workspace-mcp-go/auth.DefaultScopes
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/presentations",
     "https://www.googleapis.com/auth/tasks",
     "https://www.googleapis.com/auth/contacts",
+    "https://www.googleapis.com/auth/chat.spaces",
+    "https://www.googleapis.com/auth/forms",
+    "https://www.googleapis.com/auth/script.projects",
 ]
 
 PORT = int(os.environ.get("GOOGLE_AUTH_PORT", "4100"))

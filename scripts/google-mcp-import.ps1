@@ -1,4 +1,4 @@
-# Convert secrets/google/credentials.json (gws export) into the magks MCP
+# Convert secrets/google/credentials.json (gws export) into the Google Workspace MCP
 # credential file format under secrets/google-mcp/credentials/<email>.json.
 # Usage (repo root):  make google-mcp-import
 # Requires: USER_GOOGLE_EMAIL, and either GOOGLE_OAUTH_* in .env or client_secret.json
@@ -45,7 +45,7 @@ function Set-DotEnvKey([string]$Path, [string]$Key, [string]$Value) {
     $list = [System.Collections.Generic.List[string]]::new()
     foreach ($x in @($out)) { $list.Add([string]$x) }
     if ($list.Count -gt 0 -and $list[$list.Count - 1] -ne '') { $list.Add('') }
-    $list.Add('# Google Workspace MCP (magks) - docs/google-workspace.md')
+    $list.Add('# Google Workspace MCP (shotah) - docs/google-workspace.md')
     $list.Add(("{0}={1}" -f $Key, $Value))
     $out = $list.ToArray()
   }
@@ -83,14 +83,19 @@ if (-not $clientId -or -not $clientSecret) {
 }
 if (-not $gws.refresh_token) { throw 'credentials.json has no refresh_token' }
 
+# Keep in sync with shotah/google-workspace-mcp-go auth.DefaultScopes
 $scopes = @(
   'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/drive',
   'https://www.googleapis.com/auth/calendar',
   'https://www.googleapis.com/auth/documents',
   'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/presentations',
   'https://www.googleapis.com/auth/tasks',
-  'https://www.googleapis.com/auth/contacts'
+  'https://www.googleapis.com/auth/contacts',
+  'https://www.googleapis.com/auth/chat.spaces',
+  'https://www.googleapis.com/auth/forms',
+  'https://www.googleapis.com/auth/script.projects'
 )
 
 $outDir = Join-Path $Root 'secrets/google-mcp/credentials'

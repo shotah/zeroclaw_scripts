@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Convert secrets/google/credentials.json (gws export) into the magks MCP
+# Convert secrets/google/credentials.json (gws export) into the Google Workspace MCP
 # credential file format under secrets/google-mcp/credentials/<email>.json.
 # Usage (repo root):  make google-mcp-import
 # Requires: USER_GOOGLE_EMAIL, and either GOOGLE_OAUTH_* in .env or client_secret.json
@@ -47,7 +47,7 @@ dotenv_set() {
     else
       : >"$tmp"
     fi
-    echo "# Google Workspace MCP (magks) - docs/google-workspace.md" >>"$tmp"
+    echo "# Google Workspace MCP (shotah) - docs/google-workspace.md" >>"$tmp"
     echo "${key}=${value}" >>"$tmp"
   fi
   mv "$tmp" "$DOTENV"
@@ -102,14 +102,19 @@ payload = {
     "token_uri": "https://oauth2.googleapis.com/token",
     "client_id": client_id,
     "client_secret": client_secret,
+    # Keep in sync with shotah/google-workspace-mcp-go auth.DefaultScopes
     "scopes": [
         "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/drive",
         "https://www.googleapis.com/auth/calendar",
         "https://www.googleapis.com/auth/documents",
         "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/presentations",
         "https://www.googleapis.com/auth/tasks",
         "https://www.googleapis.com/auth/contacts",
+        "https://www.googleapis.com/auth/chat.spaces",
+        "https://www.googleapis.com/auth/forms",
+        "https://www.googleapis.com/auth/script.projects",
     ],
     "expiry": "2000-01-01T00:00:00Z",
 }
@@ -164,14 +169,19 @@ const payload = {
   token_uri: 'https://oauth2.googleapis.com/token',
   client_id: clientId,
   client_secret: clientSecret,
+  // Keep in sync with shotah/google-workspace-mcp-go auth.DefaultScopes
   scopes: [
     'https://www.googleapis.com/auth/gmail.modify',
     'https://www.googleapis.com/auth/drive',
     'https://www.googleapis.com/auth/calendar',
     'https://www.googleapis.com/auth/documents',
     'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/presentations',
     'https://www.googleapis.com/auth/tasks',
     'https://www.googleapis.com/auth/contacts',
+    'https://www.googleapis.com/auth/chat.spaces',
+    'https://www.googleapis.com/auth/forms',
+    'https://www.googleapis.com/auth/script.projects',
   ],
   expiry: '2000-01-01T00:00:00Z',
 };

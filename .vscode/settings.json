@@ -90,7 +90,6 @@
     "ldflags",
     "libc",
     "libexec",
-    "magks",
     "mcpbeam",
     "mem_limit",
     "mem_reservation",

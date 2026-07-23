@@ -17,8 +17,8 @@ ARG STRAVA_MCP_VERSION=v1.2.0
 ARG GARMIN_MCP_VERSION=v0.1.2
 # Gemini Grounding with Google Search MCP (override via GEMINI_SEARCH_MCP_REF).
 ARG GEMINI_SEARCH_MCP_REF=1fe676adcdaa79ed0798fd32be0695ffee15c644
-# Google Workspace MCP (Go; magks) — pin commit (override via GOOGLE_WORKSPACE_MCP_REF).
-ARG GOOGLE_WORKSPACE_MCP_REF=e421e4cea028e93575bb4e7b5ec1b3dc4a7084b6
+# Google Workspace MCP (Go; shotah fork) — GitHub latest each build (pin via GOOGLE_WORKSPACE_MCP_VERSION).
+ARG GOOGLE_WORKSPACE_MCP_VERSION=latest
 
 # --- fetch gantry (static Go; shotah/ai-gantry release) -----------------------
 FROM debian:trixie-slim AS gantry
@@ -49,16 +49,33 @@ RUN apt-get update \
     && install -m 0755 /tmp/gantry /gantry \
     && /gantry version
 
-# --- build Google Workspace MCP (static Go; magks) ---------------------------
-FROM golang:1.25-bookworm AS google-workspace-mcp
-ARG GOOGLE_WORKSPACE_MCP_REF
+# --- fetch Google Workspace MCP (static Go; shotah/google-workspace-mcp-go) ---
+FROM debian:trixie-slim AS google-workspace-mcp
+ARG GOOGLE_WORKSPACE_MCP_VERSION
 ARG TARGETARCH
+ARG TOOLS_CACHEBUST=0
 
-ENV CGO_ENABLED=0
-WORKDIR /src
-RUN git clone https://github.com/magks/google-workspace-mcp-go.git . \
-    && git checkout --detach "${GOOGLE_WORKSPACE_MCP_REF}" \
-    && GOOS=linux GOARCH="${TARGETARCH}" go build -trimpath -ldflags="-s -w" -o /google-workspace-mcp-go . \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && case "${TARGETARCH}" in \
+    amd64|arm64) GW_ARCH="linux_${TARGETARCH}" ;; \
+    *) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && : "TOOLS_CACHEBUST=${TOOLS_CACHEBUST}" \
+    && VER="${GOOGLE_WORKSPACE_MCP_VERSION}" \
+    && if [ "${VER}" = "latest" ]; then \
+    VER=$(curl -fsSL -o /dev/null -w '%{url_effective}' \
+    "https://github.com/shotah/google-workspace-mcp-go/releases/latest" \
+    | sed 's|.*/||'); \
+    echo "resolved google-workspace-mcp-go latest -> ${VER}"; \
+    fi \
+    && V="${VER#v}" \
+    && curl -fsSL \
+    "https://github.com/shotah/google-workspace-mcp-go/releases/download/${VER}/google-workspace-mcp-go_${V}_${GW_ARCH}.tar.gz" \
+    -o /tmp/google-workspace-mcp-go.tar.gz \
+    && tar -xzf /tmp/google-workspace-mcp-go.tar.gz -C /tmp \
+    && install -m 0755 /tmp/google-workspace-mcp-go /google-workspace-mcp-go \
     && test -x /google-workspace-mcp-go
 
 # --- fetch strava-mcp (static Go binary; MCP server for Strava) ---------------
