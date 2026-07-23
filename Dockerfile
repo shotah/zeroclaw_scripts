@@ -6,8 +6,12 @@
 # Build:  docker compose build
 # Auth:   docs/google-workspace.md · docs/strava.md · docs/garmin.md · docs/web-search.md · docs/cast.md · docs/ytmusic.md
 
-# shotah/ai-gantry release (the runtime). Override via GANTRY_VERSION.
-ARG GANTRY_VERSION=v0.0.6
+# Our packages: default `latest` (resolved at build). Pin e.g. v0.0.7 to freeze.
+# TOOLS_CACHEBUST (from make/remote) busts Docker cache so latest re-resolves.
+ARG GANTRY_VERSION=latest
+ARG MCP_BEAM_VERSION=latest
+ARG YOUTUBE_GO_MCP_VERSION=latest
+ARG TOOLS_CACHEBUST=0
 ARG STRAVA_MCP_VERSION=v1.2.0
 # shotah/go-garmin release (DI auth + MCP). Override via GARMIN_MCP_VERSION.
 ARG GARMIN_MCP_VERSION=v0.1.2
@@ -15,16 +19,12 @@ ARG GARMIN_MCP_VERSION=v0.1.2
 ARG GEMINI_SEARCH_MCP_REF=1fe676adcdaa79ed0798fd32be0695ffee15c644
 # Google Workspace MCP (Go; magks) — pin commit (override via GOOGLE_WORKSPACE_MCP_REF).
 ARG GOOGLE_WORKSPACE_MCP_REF=e421e4cea028e93575bb4e7b5ec1b3dc4a7084b6
-# Our packages: default `latest` (resolved at build). Pin e.g. v0.0.2 to freeze.
-# TOOLS_CACHEBUST (from make/remote) busts Docker cache so latest re-resolves.
-ARG MCP_BEAM_VERSION=latest
-ARG YOUTUBE_GO_MCP_VERSION=latest
-ARG TOOLS_CACHEBUST=0
 
 # --- fetch gantry (static Go; shotah/ai-gantry release) -----------------------
 FROM debian:trixie-slim AS gantry
 ARG GANTRY_VERSION
 ARG TARGETARCH
+ARG TOOLS_CACHEBUST=0
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
@@ -33,9 +33,17 @@ RUN apt-get update \
     amd64|arm64) GANTRY_ARCH="linux_${TARGETARCH}" ;; \
     *) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
     esac \
-    && V="${GANTRY_VERSION#v}" \
+    && : "TOOLS_CACHEBUST=${TOOLS_CACHEBUST}" \
+    && VER="${GANTRY_VERSION}" \
+    && if [ "${VER}" = "latest" ]; then \
+    VER=$(curl -fsSL -o /dev/null -w '%{url_effective}' \
+    "https://github.com/shotah/ai-gantry/releases/latest" \
+    | sed 's|.*/||'); \
+    echo "resolved ai-gantry latest -> ${VER}"; \
+    fi \
+    && V="${VER#v}" \
     && curl -fsSL \
-    "https://github.com/shotah/ai-gantry/releases/download/${GANTRY_VERSION}/gantry_${V}_${GANTRY_ARCH}.tar.gz" \
+    "https://github.com/shotah/ai-gantry/releases/download/${VER}/gantry_${V}_${GANTRY_ARCH}.tar.gz" \
     -o /tmp/gantry.tar.gz \
     && tar -xzf /tmp/gantry.tar.gz -C /tmp \
     && install -m 0755 /tmp/gantry /gantry \

@@ -1,0 +1,217 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="420" viewBox="0 0 720 420" role="img" aria-label="Tim the Wizard — Office Merlin throwback mascot for the host companion">
+  <defs>
+    <radialGradient id="stage" cx="42%" cy="38%" r="72%">
+      <stop offset="0" stop-color="#6b8ec4"/>
+      <stop offset="0.55" stop-color="#3f6099"/>
+      <stop offset="1" stop-color="#243f72"/>
+    </radialGradient>
+
+    <linearGradient id="robe" x1="0.25" y1="0" x2="0.75" y2="1">
+      <stop offset="0" stop-color="#3a58b5"/>
+      <stop offset="0.45" stop-color="#243f96"/>
+      <stop offset="1" stop-color="#152a6a"/>
+    </linearGradient>
+    <radialGradient id="robeShine" cx="35%" cy="25%" r="65%">
+      <stop offset="0" stop-color="#5b7fd4" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#243f96" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="hat" x1="0.35" y1="0" x2="0.65" y2="1">
+      <stop offset="0" stop-color="#4a6bc9"/>
+      <stop offset="1" stop-color="#1a3278"/>
+    </linearGradient>
+
+    <radialGradient id="skin" cx="40%" cy="35%" r="70%">
+      <stop offset="0" stop-color="#f8d2bc"/>
+      <stop offset="1" stop-color="#e5a484"/>
+    </radialGradient>
+    <radialGradient id="nose" cx="35%" cy="30%" r="70%">
+      <stop offset="0" stop-color="#f6c4b4"/>
+      <stop offset="0.55" stop-color="#e89a88"/>
+      <stop offset="1" stop-color="#d07868"/>
+    </radialGradient>
+
+    <linearGradient id="beard" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.65" stop-color="#f3f6fb"/>
+      <stop offset="1" stop-color="#cfd8e6"/>
+    </linearGradient>
+    <linearGradient id="brim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#d9e2f0"/>
+    </linearGradient>
+
+    <linearGradient id="gold" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#fff1a0"/>
+      <stop offset="0.35" stop-color="#f0c93a"/>
+      <stop offset="1" stop-color="#b8860b"/>
+    </linearGradient>
+    <linearGradient id="goldDark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e6b422"/>
+      <stop offset="1" stop-color="#8a6508"/>
+    </linearGradient>
+
+    <filter id="shade" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#0b1a38" flood-opacity="0.35"/>
+    </filter>
+
+    <path id="star" d="M0,-11 L3.2,-3.4 L11,-3.4 L4.6,1.6 L6.8,9.2 L0,4.5 L-6.8,9.2 L-4.6,1.6 L-11,-3.4 L-3.2,-3.4 Z"/>
+    <path id="moon" d="M3.5,-9 A10 10 0 1 0 3.5,9 A7 7 0 1 1 3.5,-9 Z"/>
+  </defs>
+
+  <rect width="720" height="420" rx="28" fill="url(#stage)"/>
+  <rect x="2" y="2" width="716" height="416" rx="26" fill="none" stroke="#1a335f" stroke-width="2" opacity="0.45"/>
+
+  <text x="36" y="52" font-family="Georgia, 'Times New Roman', serif" font-size="34" fill="#f8fafc">Tim the Wizard</text>
+  <text x="38" y="80" font-family="Segoe UI, Tahoma, sans-serif" font-size="14" fill="#d0def5">Not Clippy. The other guy. Host companion.</text>
+
+  <!-- character -->
+  <g transform="translate(195 10)" filter="url(#shade)">
+
+    <!-- ===== ROBE ===== -->
+    <path d="M78 200
+             C25 235 5 300 16 370
+             L268 370
+             C282 300 258 235 206 200
+             C175 182 110 182 78 200 Z"
+          fill="url(#robe)"/>
+    <path d="M78 200
+             C25 235 5 300 16 370
+             L268 370
+             C282 300 258 235 206 200
+             C175 182 110 182 78 200 Z"
+          fill="url(#robeShine)"/>
+
+    <!-- left sleeve + open hand -->
+    <path d="M82 215 C35 235 -5 270 -12 312 C15 322 48 308 70 285 C78 250 82 228 82 215 Z"
+          fill="url(#robe)"/>
+    <g transform="translate(-8 300)">
+      <ellipse cx="6" cy="14" rx="18" ry="13" fill="url(#skin)"/>
+      <ellipse cx="-8" cy="4" rx="4.5" ry="9" fill="url(#skin)" transform="rotate(-30 -8 4)"/>
+      <ellipse cx="2" cy="-2" rx="4.5" ry="10" fill="url(#skin)" transform="rotate(-8 2 -2)"/>
+      <ellipse cx="12" cy="0" rx="4" ry="9" fill="url(#skin)" transform="rotate(12 12 0)"/>
+      <ellipse cx="20" cy="8" rx="4" ry="8" fill="url(#skin)" transform="rotate(38 20 8)"/>
+    </g>
+
+    <!-- right sleeve (raised, holding trophy) -->
+    <path d="M198 208 C235 195 268 175 292 155 C310 175 300 210 278 235 C250 245 220 235 198 208 Z"
+          fill="url(#robe)"/>
+
+    <!-- stars + moons on robe -->
+    <g fill="#f2cf2e">
+      <use href="#star" transform="translate(100 255) scale(0.95) rotate(-8)"/>
+      <use href="#moon" transform="translate(158 275) scale(1) rotate(18)"/>
+      <use href="#star" transform="translate(205 252) scale(0.8) rotate(22)"/>
+      <use href="#moon" transform="translate(88 315) scale(0.85) rotate(-20)"/>
+      <use href="#star" transform="translate(145 325) scale(1.1) rotate(4)"/>
+      <use href="#moon" transform="translate(210 318) scale(0.9) rotate(40)"/>
+      <use href="#star" transform="translate(118 362) scale(0.7) rotate(-30)"/>
+      <use href="#star" transform="translate(185 358) scale(0.6) rotate(50)"/>
+      <use href="#moon" transform="translate(245 285) scale(0.7) rotate(-10)"/>
+    </g>
+
+    <!-- ===== TROPHY (raised in right hand, Merlin victory pose) ===== -->
+    <g transform="translate(248 95)">
+      <!-- cup body -->
+      <path d="M10 36 C10 14 20 2 36 2 C52 2 62 14 62 36 L56 68 C54 82 46 90 36 90 C26 90 18 82 16 68 Z"
+            fill="url(#gold)" stroke="#8a6508" stroke-width="1.4"/>
+      <ellipse cx="36" cy="6" rx="28" ry="8" fill="#fff4b0" stroke="#8a6508" stroke-width="1.2"/>
+      <ellipse cx="36" cy="9" rx="20" ry="5" fill="#c99218" opacity="0.5"/>
+      <!-- handles -->
+      <path d="M12 28 C-10 22 -12 55 14 60" fill="none" stroke="url(#gold)" stroke-width="7" stroke-linecap="round"/>
+      <path d="M60 28 C82 22 84 55 58 60" fill="none" stroke="url(#gold)" stroke-width="7" stroke-linecap="round"/>
+      <path d="M12 28 C-10 22 -12 55 14 60" fill="none" stroke="#8a6508" stroke-width="1.4" opacity="0.55"/>
+      <path d="M60 28 C82 22 84 55 58 60" fill="none" stroke="#8a6508" stroke-width="1.4" opacity="0.55"/>
+      <!-- stem + base -->
+      <rect x="31" y="90" width="10" height="18" rx="2" fill="url(#goldDark)" stroke="#8a6508" stroke-width="1"/>
+      <ellipse cx="36" cy="114" rx="24" ry="8" fill="url(#gold)" stroke="#8a6508" stroke-width="1.2"/>
+      <ellipse cx="36" cy="111" rx="15" ry="3.5" fill="#fff4b0" opacity="0.65"/>
+      <!-- gripping hand (on stem, attached to raised sleeve) -->
+      <ellipse cx="36" cy="108" rx="17" ry="13" fill="url(#skin)"/>
+      <ellipse cx="20" cy="102" rx="5.5" ry="9" fill="url(#skin)" transform="rotate(-25 20 102)"/>
+      <ellipse cx="52" cy="102" rx="5.5" ry="9" fill="url(#skin)" transform="rotate(25 52 102)"/>
+    </g>
+
+    <!-- ===== BEARD (long pointed, under face) ===== -->
+    <path d="M92 210
+             C98 270 120 335 142 372
+             C164 335 186 270 192 210
+             C172 245 112 245 92 210 Z"
+          fill="url(#beard)"/>
+    <!-- beard volume lines -->
+    <path d="M120 250 C128 290 136 330 142 360" fill="none" stroke="#ffffff" stroke-width="4" opacity="0.45" stroke-linecap="round"/>
+    <path d="M165 250 C158 295 150 335 142 360" fill="none" stroke="#c5d0e0" stroke-width="3" opacity="0.5" stroke-linecap="round"/>
+
+    <!-- ===== FACE ===== -->
+    <ellipse cx="142" cy="178" rx="56" ry="52" fill="url(#skin)"/>
+
+    <!-- thick Merlin brows -->
+    <path d="M95 155 C112 140 128 138 138 148" fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round"/>
+    <path d="M146 148 C158 138 174 140 190 155" fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round"/>
+    <!-- brow shadow under -->
+    <path d="M98 158 C114 146 128 145 138 152" fill="none" stroke="#d7e0ee" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
+
+    <!-- large oval eyes -->
+    <ellipse cx="118" cy="172" rx="16" ry="18" fill="#ffffff"/>
+    <ellipse cx="166" cy="172" rx="16" ry="18" fill="#ffffff"/>
+    <!-- soft lid -->
+    <path d="M104 164 Q118 158 132 164" fill="none" stroke="#e5a484" stroke-width="2.5" stroke-linecap="round" opacity="0.55"/>
+    <path d="M152 164 Q166 158 180 164" fill="none" stroke="#e5a484" stroke-width="2.5" stroke-linecap="round" opacity="0.55"/>
+    <!-- pupils -->
+    <ellipse cx="120" cy="175" rx="5.5" ry="6.5" fill="#1a335f"/>
+    <ellipse cx="168" cy="175" rx="5.5" ry="6.5" fill="#1a335f"/>
+    <circle cx="122" cy="172" r="2" fill="#ffffff"/>
+    <circle cx="170" cy="172" r="2" fill="#ffffff"/>
+
+    <!-- THE bulbous Merlin nose -->
+    <ellipse cx="142" cy="198" rx="22" ry="20" fill="url(#nose)"/>
+    <ellipse cx="134" cy="190" rx="7" ry="5.5" fill="#f7c8bc" opacity="0.75"/>
+
+    <!-- huge bushy curling mustache -->
+    <path d="M88 208
+             C105 192 122 196 142 210
+             C162 196 179 192 196 208
+             C200 232 175 248 142 242
+             C109 248 84 232 88 208 Z"
+          fill="url(#beard)"/>
+    <!-- curl tips (signature Merlin) -->
+    <path d="M90 210 C78 218 74 238 90 244 C82 228 84 216 90 210" fill="#eef3fa"/>
+    <path d="M194 210 C206 218 210 238 194 244 C202 228 200 216 194 210" fill="#eef3fa"/>
+    <!-- mustache center dip under nose -->
+    <ellipse cx="142" cy="218" rx="10" ry="5" fill="#e8eef8" opacity="0.7"/>
+
+    <!-- ===== HAT (tall, tilted, white brim) ===== -->
+    <g transform="rotate(-10 142 110)">
+      <path d="M72 135
+               L142 -8
+               L212 135
+               Q142 122 72 135 Z"
+            fill="url(#hat)"/>
+      <!-- hat side shade -->
+      <path d="M142 -8 L212 135 Q180 128 142 130 Z" fill="#152a6a" opacity="0.28"/>
+      <!-- fluffy white brim -->
+      <ellipse cx="142" cy="138" rx="78" ry="20" fill="url(#brim)"/>
+      <ellipse cx="142" cy="132" rx="70" ry="13" fill="#ffffff"/>
+      <path d="M75 136 Q142 156 209 136" fill="none" stroke="#b8c7dc" stroke-width="4" opacity="0.55"/>
+      <!-- decorations -->
+      <use href="#star" transform="translate(142 48) scale(1.35)" fill="#f2cf2e"/>
+      <use href="#moon" transform="translate(168 95) scale(0.85) rotate(30)" fill="#f2cf2e"/>
+      <use href="#star" transform="translate(118 100) scale(0.55) rotate(-20)" fill="#f2cf2e"/>
+    </g>
+  </g>
+
+  <!-- speech bubble -->
+  <g transform="translate(470 248)">
+    <path d="M0 20
+             h190 a16 16 0 0 1 16 16
+             v70 a16 16 0 0 1 -16 16
+             h-150
+             l-18 22 -4 -22
+             h-18 a16 16 0 0 1 -16 -16
+             v-70 a16 16 0 0 1 16 -16 z"
+          fill="#f8fafc" stroke="#2a4570" stroke-width="2"/>
+    <text x="22" y="58" font-family="Segoe UI, Tahoma, sans-serif" font-size="15" fill="#0f172a">It looks like you&#8217;re</text>
+    <text x="22" y="80" font-family="Segoe UI, Tahoma, sans-serif" font-size="15" fill="#0f172a">trying to run an agent.</text>
+    <text x="22" y="106" font-family="Segoe UI, Tahoma, sans-serif" font-size="13" fill="#64748b">Shall I prompt for Garmin?</text>
+  </g>
+</svg>

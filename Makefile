@@ -6,7 +6,7 @@ ENV_FILE := .env
 ENV_EXAMPLE := .env.example
 PERSONA_DIR := persona
 
-# Bust mcp-beam / youtube-go-mcp fetch stages so `latest` re-resolves each build.
+# Bust gantry / mcp-beam / youtube-go-mcp fetch stages so `latest` re-resolves each build.
 ifeq ($(OS),Windows_NT)
   TOOLS_CACHEBUST ?= $(shell powershell -NoProfile -Command "[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()")
 else

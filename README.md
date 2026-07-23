@@ -220,7 +220,7 @@ Set in `.env` (copy from [`.env.example`](.env.example)). Secrets are never comm
 | `MEMORY_*`, `HISTORY_*`, `TOOL_*`, `CRON_*` | — | gantry runtime knobs — see [ai-gantry §5.1](https://github.com/shotah/ai-gantry#51-environment-variables) |
 | `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` | — | Strava API app (see [Workout coaching](#workout-coaching-strava)) |
 | `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` / `USER_GOOGLE_EMAIL` | — | Google Workspace MCP OAuth (see [docs/google-workspace.md](docs/google-workspace.md)) |
-| `GANTRY_VERSION` | — | shotah/ai-gantry release baked into the image (default pinned in `Dockerfile`) |
+| `GANTRY_VERSION` | — | shotah/ai-gantry release (`latest` default; pin `vX.Y.Z` to freeze) |
 | `GANTRY_IMAGE` | — | Local tag after build (default `gantry-tim:local`) |
 | `STRAVA_MCP_VERSION` / `GARMIN_MCP_VERSION` / `GEMINI_SEARCH_MCP_REF` / `GOOGLE_WORKSPACE_MCP_REF` | — | Tool build pins (defaults in `Dockerfile`) |
 | `MCP_BEAM_VERSION` / `YOUTUBE_GO_MCP_VERSION` | — | shotah tool releases (`latest` default; pin `vX.Y.Z` to freeze) |
